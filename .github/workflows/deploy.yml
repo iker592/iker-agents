@@ -47,7 +47,7 @@ jobs:
 
       - name: Update dev endpoints
         run: |
-          for stack in ServerlessDeepAgentStack ResearchAgentStack CodingAgentStack; do
+          for stack in DSPAgentStack ResearchAgentStack CodingAgentStack; do
             RUNTIME_ID=$(cat cdk-outputs.json | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('$stack', {}).get('RuntimeId', ''))" 2>/dev/null || echo "")
             if [ -n "$RUNTIME_ID" ]; then
               VERSION=$(uv run python scripts/get_latest_version.py $RUNTIME_ID 2>/dev/null || echo "")
@@ -64,12 +64,12 @@ jobs:
 
       - name: Run E2E tests
         run: |
-          ARN=$(cat cdk-outputs.json | python3 -c "import sys,json; print(json.load(sys.stdin)['ServerlessDeepAgentStack']['RuntimeArn'])")
+          ARN=$(cat cdk-outputs.json | python3 -c "import sys,json; print(json.load(sys.stdin)['DSPAgentStack']['RuntimeArn'])")
           AGENT_RUNTIME_ARN=$ARN AGENT_ENDPOINT=dev uv run pytest -m e2e
 
-      - name: Promote DeepAgent to canary
+      - name: Promote DSPAgent to canary
         run: |
-          RUNTIME_ID=$(cat cdk-outputs.json | python3 -c "import sys,json; print(json.load(sys.stdin)['ServerlessDeepAgentStack']['RuntimeId'])")
+          RUNTIME_ID=$(cat cdk-outputs.json | python3 -c "import sys,json; print(json.load(sys.stdin)['DSPAgentStack']['RuntimeId'])")
           VERSION=$(uv run python scripts/get_latest_version.py $RUNTIME_ID)
           aws bedrock-agentcore-control update-agent-runtime-endpoint \
             --agent-runtime-id $RUNTIME_ID \
@@ -77,9 +77,9 @@ jobs:
             --agent-runtime-version $VERSION \
             --region ${{ env.AWS_REGION }}
 
-      - name: Promote DeepAgent to prod
+      - name: Promote DSPAgent to prod
         run: |
-          RUNTIME_ID=$(cat cdk-outputs.json | python3 -c "import sys,json; print(json.load(sys.stdin)['ServerlessDeepAgentStack']['RuntimeId'])")
+          RUNTIME_ID=$(cat cdk-outputs.json | python3 -c "import sys,json; print(json.load(sys.stdin)['DSPAgentStack']['RuntimeId'])")
           VERSION=$(uv run python scripts/get_latest_version.py $RUNTIME_ID)
           aws bedrock-agentcore-control update-agent-runtime-endpoint \
             --agent-runtime-id $RUNTIME_ID \

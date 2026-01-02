@@ -28,7 +28,8 @@ def format_agui_event(data: dict) -> str:
     event_type = data.get("type")
 
     if event_type == "RUN_STARTED":
-        return f"{BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{RESET}\n{BLUE}│{RESET} {WHITE}{BOLD}Run Started{RESET}\n{BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{RESET}\n"
+        separator = f"{BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{RESET}"
+        return f"{separator}\n{BLUE}│{RESET} {WHITE}{BOLD}Run Started{RESET}\n{separator}\n"
 
     elif event_type == "TEXT_MESSAGE_START":
         return f"{GREEN}{BOLD}💬 Assistant:{RESET}\n"
@@ -42,7 +43,14 @@ def format_agui_event(data: dict) -> str:
 
     elif event_type == "TOOL_CALL_START":
         tool_name = data.get("toolCallName", "unknown")
-        return f"\n{YELLOW}┌─────────────────────────────────────────────────┐{RESET}\n{YELLOW}│{RESET} {MAGENTA}{BOLD}🔧 Tool Call:{RESET} {WHITE}{tool_name}{RESET}\n{YELLOW}├─────────────────────────────────────────────────┤{RESET}\n{YELLOW}│{RESET} {CYAN}Args:{RESET} "
+        box_top = f"{YELLOW}┌─────────────────────────────────────────────────┐{RESET}"
+        box_mid = f"{YELLOW}├─────────────────────────────────────────────────┤{RESET}"
+        return (
+            f"\n{box_top}\n"
+            f"{YELLOW}│{RESET} {MAGENTA}{BOLD}🔧 Tool Call:{RESET} {WHITE}{tool_name}{RESET}\n"
+            f"{box_mid}\n"
+            f"{YELLOW}│{RESET} {CYAN}Args:{RESET} "
+        )
 
     elif event_type == "TOOL_CALL_ARGS":
         delta = data.get("delta", "")
@@ -57,9 +65,11 @@ def format_agui_event(data: dict) -> str:
 
     elif event_type == "RUN_FINISHED":
         result = data.get("result")
-        output = f"\n{BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{RESET}\n{BLUE}│{RESET} {GREEN}{BOLD}✅ Run Finished{RESET}"
+        separator = f"{BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{RESET}"
+        output = f"\n{separator}\n{BLUE}│{RESET} {GREEN}{BOLD}✅ Run Finished{RESET}"
         if result and result != "null":
-            output += f"\n{BLUE}├─────────────────────────────────────────────────┤{RESET}\n{BLUE}│{RESET} {MAGENTA}{BOLD}📊 Structured Output:{RESET}\n"
+            box_mid = f"{BLUE}├─────────────────────────────────────────────────┤{RESET}"
+            output += f"\n{box_mid}\n{BLUE}│{RESET} {MAGENTA}{BOLD}📊 Structured Output:{RESET}\n"
             try:
                 result_json = json.dumps(result, indent=2)
                 for line in result_json.split("\n"):
@@ -244,10 +254,21 @@ def main():
     use_aws = args.runtime_arn is not None
 
     if not use_aws and not args.endpoint:
-        print(f"{RED}Error: Either --endpoint (for local) or --runtime-arn (for AWS) is required{RESET}")
+        error_msg = (
+            f"{RED}Error: Either --endpoint (for local) or "
+            f"--runtime-arn (for AWS) is required{RESET}"
+        )
+        print(error_msg)
         print(f"{YELLOW}Examples:{RESET}")
-        print(f"  {CYAN}Local: python -m yahoo_dsp_agent_sdk.chat --endpoint=invocations{RESET}")
-        print(f"  {CYAN}AWS: python -m yahoo_dsp_agent_sdk.chat --runtime-arn=arn:aws:bedrock-agentcore:...{RESET}")
+        local_example = (
+            f"  {CYAN}Local: python -m yahoo_dsp_agent_sdk.chat --endpoint=invocations{RESET}"
+        )
+        print(local_example)
+        aws_example = (
+            f"  {CYAN}AWS: python -m yahoo_dsp_agent_sdk.chat "
+            f"--runtime-arn=arn:aws:bedrock-agentcore:...{RESET}"
+        )
+        print(aws_example)
         sys.exit(1)
 
     # Generate session/user IDs if not provided
@@ -262,7 +283,9 @@ def main():
     # Print header
     print(f"{BOLD}{BLUE}🤖 Agent Chat{RESET}")
     if use_aws:
-        runtime_name = args.runtime_arn.split("/")[-1] if "/" in args.runtime_arn else args.runtime_arn
+        runtime_name = (
+            args.runtime_arn.split("/")[-1] if "/" in args.runtime_arn else args.runtime_arn
+        )
         print(f"{CYAN}Runtime: {WHITE}{runtime_name}{RESET}")
         if args.aws_endpoint:
             print(f"{CYAN}AWS Endpoint: {WHITE}{args.aws_endpoint}{RESET}")

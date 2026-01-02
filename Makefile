@@ -316,7 +316,7 @@ invoke-agui: aws-auth
 
 chat:
 	@echo "Starting interactive chat (make sure local server is running with 'make local')"
-	uv run python -m yahoo_dsp_agent_sdk.chat --endpoint=invocations --url=http://localhost:8080 --default
+	uv run python -m yahoo_dsp_agent_sdk.chat --endpoint=invocations --url=http://localhost:8080 --mode=agui --default
 
 chat-aws: aws-auth
 	@if [ -z "$(STACK)" ]; then \
@@ -333,7 +333,7 @@ chat-aws: aws-auth
 		exit 1; \
 	fi
 	@echo "Starting interactive chat with $(STACK) on $(ENDPOINT) endpoint..."
-	AGENT_RUNTIME_ARN=$(ARN) AGENT_ENDPOINT=$(ENDPOINT) STREAM_AGUI=true $(if $(SESSION_ID),SESSION_ID=$(SESSION_ID),) $(if $(USER_ID),USER_ID=$(USER_ID),) uv run python scripts/chat_aws.py
+	uv run python -m yahoo_dsp_agent_sdk.chat --runtime-arn=$(ARN) --aws-endpoint=$(ENDPOINT) --aws-region=us-east-1 --mode=agui $(if $(SESSION_ID),--session-id=$(SESSION_ID),) $(if $(USER_ID),--user-id=$(USER_ID),) --default
 
 clean:
 	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true

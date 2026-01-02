@@ -59,5 +59,3 @@ class GitHubOIDCStack(Stack):
             "OIDCProviderArn",
             value=oidc_provider.open_id_connect_provider_arn,
         )
-
-

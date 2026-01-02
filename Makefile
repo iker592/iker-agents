@@ -318,6 +318,23 @@ chat:
 	@echo "Starting interactive chat (make sure local server is running with 'make local')"
 	uv run python -m yahoo_dsp_agent_sdk.chat --endpoint=invocations --url=http://localhost:8080 --default
 
+chat-aws: aws-auth
+	@if [ -z "$(STACK)" ]; then \
+		echo "Usage: make chat-aws STACK=<stack> [ENDPOINT=dev|canary|prod] [SESSION_ID=<id>] [USER_ID=<id>]"; \
+		echo "  STACK options: DSPAgentStack (default), ResearchAgentStack, CodingAgentStack"; \
+		echo "  ENDPOINT: dev (default), canary, prod, or DEFAULT for no endpoint"; \
+		exit 1; \
+	fi
+	$(eval ENDPOINT := $(or $(ENDPOINT),dev))
+	$(eval STACK := $(or $(STACK),DSPAgentStack))
+	$(eval ARN := $(shell cat cdk-outputs.json 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['$(STACK)']['RuntimeArn'])" 2>/dev/null || echo ""))
+	@if [ -z "$(ARN)" ]; then \
+		echo "Error: No deployment found for $(STACK). Run 'make deploy-all' first."; \
+		exit 1; \
+	fi
+	@echo "Starting interactive chat with $(STACK) on $(ENDPOINT) endpoint..."
+	AGENT_RUNTIME_ARN=$(ARN) AGENT_ENDPOINT=$(ENDPOINT) STREAM_AGUI=true $(if $(SESSION_ID),SESSION_ID=$(SESSION_ID),) $(if $(USER_ID),USER_ID=$(USER_ID),) uv run python scripts/chat_aws.py
+
 clean:
 	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 	find . -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true

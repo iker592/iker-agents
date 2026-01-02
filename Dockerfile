@@ -1,6 +1,6 @@
 FROM ghcr.io/astral-sh/uv:latest AS uv
 
-FROM --platform=linux/arm64 public.ecr.aws/docker/library/python:3.13-slim AS builder
+FROM public.ecr.aws/docker/library/python:3.13-slim AS builder
 
 ENV UV_COMPILE_BYTECODE=1
 ENV UV_NO_INSTALLER_METADATA=1
@@ -18,7 +18,7 @@ RUN --mount=from=uv,source=/uv,target=/bin/uv \
     uv export --frozen --no-dev --no-editable -o requirements.txt && \
     uv pip install -r requirements.txt --system
 
-FROM --platform=linux/arm64 public.ecr.aws/docker/library/python:3.13-slim AS runtime
+FROM public.ecr.aws/docker/library/python:3.13-slim AS runtime
 
 # Build arg for selecting which agent to include (default: DSP agent)
 ARG AGENT_PATH=./agents/dsp

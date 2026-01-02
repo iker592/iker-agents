@@ -1,4 +1,4 @@
-.PHONY: help setup sync lint format fix check build start restart down logs dev local deploy deploy-all invoke invoke-stream invoke-agui chat clean aws-auth test test-unit test-e2e promote-canary promote-prod get-latest-version promote-canary-latest promote-prod-latest pipeline-pr pipeline-merge docker-build docker-start docker-logs docker-start-all docker-build-all local-agent
+.PHONY: help setup sync lint format fix check build start restart down logs dev local deploy deploy-all deploy-oidc invoke invoke-stream invoke-agui chat clean aws-auth test test-unit test-e2e promote-canary promote-prod get-latest-version promote-canary-latest promote-prod-latest pipeline-pr pipeline-merge docker-build docker-start docker-logs docker-start-all docker-build-all local-agent
 
 help:
 	@echo "Available commands:"
@@ -40,6 +40,7 @@ help:
 	@echo "  Deployment"
 	@echo "    make deploy      Deploy main DSP agent stack"
 	@echo "    make deploy-all  Deploy ALL agent stacks (dsp, research, coding)"
+	@echo "    make deploy-oidc Deploy GitHub OIDC stack (one-time setup for CI/CD)"
 	@echo ""
 	@echo "  Endpoint Promotion"
 	@echo "    make promote-canary VERSION=N  Update canary endpoint to version N"
@@ -177,6 +178,17 @@ local-agent:
 deploy: aws-auth
 	@echo "Deploying runtime (creates new version)..."
 	uv run cdk deploy DSPAgentStack --require-approval never --outputs-file cdk-outputs.json
+
+deploy-oidc: aws-auth
+	@echo "Deploying GitHub OIDC stack for CI/CD authentication..."
+	uv run cdk deploy GitHubOIDCStack --require-approval never --outputs-file cdk-outputs-oidc.json
+	@echo ""
+	@echo "✅ OIDC stack deployed!"
+	@echo ""
+	@echo "Next steps:"
+	@echo "  1. Copy the RoleArn from above"
+	@echo "  2. Go to GitHub → Settings → Secrets and variables → Actions"
+	@echo "  3. Add secret: AWS_ROLE_ARN = <copied ARN>"
 
 deploy-all: aws-auth
 	@echo "Deploying all agent stacks..."

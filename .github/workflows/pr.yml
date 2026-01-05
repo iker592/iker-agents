@@ -27,7 +27,7 @@ jobs:
       - name: PR checks
         run: make pipeline-pr
 
-  ui-preview:
+  full-preview:
     runs-on: ubuntu-latest
     if: github.event.pull_request.head.repo.full_name == github.repository
     permissions:
@@ -37,15 +37,35 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up QEMU for ARM64 builds
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install CDK CLI
+        run: npm install -g aws-cdk
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.13
+
+      - name: Install dependencies
+        run: uv sync
+
       - name: Install Bun
         uses: oven-sh/setup-bun@v2
-
-      - name: Build UI for preview
-        run: |
-          cd ui
-          bun install
-          # Use placeholder API URL for preview
-          VITE_API_URL=https://placeholder-api.example.com bun run build
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -53,80 +73,78 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Deploy UI to preview bucket
+      - name: Deploy full preview stack
         id: deploy
         run: |
           PR_NUMBER=${{ github.event.pull_request.number }}
-          BUCKET_NAME="iker-agents-ui-preview-pr-${PR_NUMBER}"
 
-          # Create or update bucket with website configuration
-          if ! aws s3api head-bucket --bucket "$BUCKET_NAME" 2>/dev/null; then
-            echo "Creating preview bucket: $BUCKET_NAME"
-            aws s3 mb s3://$BUCKET_NAME --region ${{ env.AWS_REGION }}
+          echo "🚀 Deploying full preview for PR ${PR_NUMBER}..."
 
-            # Enable static website hosting
-            aws s3 website s3://$BUCKET_NAME \
-              --index-document index.html \
-              --error-document index.html
+          # Build UI
+          cd ui && bun install && cd ..
+          cd ui && VITE_API_URL=placeholder bun run build && cd ..
 
-            # Make bucket public for preview
-            aws s3api put-public-access-block \
-              --bucket $BUCKET_NAME \
-              --public-access-block-configuration \
-                "BlockPublicAcls=false,IgnorePublicAcls=false,BlockPublicPolicy=false,RestrictPublicBuckets=false"
+          # Deploy all stacks with preview context
+          cdk deploy --all \
+            --require-approval never \
+            --context preview=true \
+            --context pr=${PR_NUMBER} \
+            --outputs-file cdk-outputs-pr-${PR_NUMBER}.json
 
-            # Add bucket policy for public read
-            cat > /tmp/bucket-policy.json <<EOF
-          {
-            "Version": "2012-10-17",
-            "Statement": [
-              {
-                "Sid": "PublicReadGetObject",
-                "Effect": "Allow",
-                "Principal": "*",
-                "Action": "s3:GetObject",
-                "Resource": "arn:aws:s3:::${BUCKET_NAME}/*"
-              }
-            ]
-          }
-          EOF
-            aws s3api put-bucket-policy --bucket $BUCKET_NAME --policy file:///tmp/bucket-policy.json
+          # Extract URLs
+          UI_URL=$(cat cdk-outputs-pr-${PR_NUMBER}.json | python3 -c "import sys,json; print(json.load(sys.stdin).get('UIStack-PR${PR_NUMBER}', {}).get('UIDistributionURL', ''))")
+          API_URL=$(cat cdk-outputs-pr-${PR_NUMBER}.json | python3 -c "import sys,json; print(json.load(sys.stdin).get('UIStack-PR${PR_NUMBER}', {}).get('APIURL', ''))")
+
+          # Rebuild UI with real API URL
+          if [ -n "$API_URL" ]; then
+            echo "Rebuilding UI with API URL: $API_URL"
+            cd ui && VITE_API_URL=$API_URL bun run build
+
+            # Sync to S3
+            BUCKET=$(cat ../cdk-outputs-pr-${PR_NUMBER}.json | python3 -c "import sys,json; print(json.load(sys.stdin).get('UIStack-PR${PR_NUMBER}', {}).get('UIBucketName', ''))")
+            if [ -n "$BUCKET" ]; then
+              aws s3 sync dist/ s3://$BUCKET/ --delete
+            fi
           fi
 
-          # Sync UI files to bucket
-          cd ui
-          aws s3 sync dist/ s3://$BUCKET_NAME/ --delete
-
-          # Get website URL
-          PREVIEW_URL="http://${BUCKET_NAME}.s3-website-${AWS_REGION}.amazonaws.com"
-          echo "preview_url=$PREVIEW_URL" >> $GITHUB_OUTPUT
-          echo "bucket_name=$BUCKET_NAME" >> $GITHUB_OUTPUT
+          echo "preview_url=$UI_URL" >> $GITHUB_OUTPUT
+          echo "api_url=$API_URL" >> $GITHUB_OUTPUT
 
       - name: Comment PR with preview URL
         uses: actions/github-script@v7
         with:
           script: |
             const previewUrl = '${{ steps.deploy.outputs.preview_url }}';
-            const bucketName = '${{ steps.deploy.outputs.bucket_name }}';
+            const apiUrl = '${{ steps.deploy.outputs.api_url }}';
             const prNumber = ${{ github.event.pull_request.number }};
 
-            const body = `## 🚀 UI Preview Deployed
+            const body = `## 🚀 Full Preview Deployed
 
-            Your UI changes have been deployed to a preview environment!
+            Your changes have been deployed to a complete preview environment with **real working agents**!
 
-            **Preview URL:** ${previewUrl}
+            **🌐 Preview URL:** ${previewUrl}
+            **🔌 API URL:** ${apiUrl}
 
-            **Note:** This preview uses a placeholder API URL. To test with real agents, you'll need to deploy the full stack.
+            ### What's Deployed
+            - ✅ UI (React app with CloudFront)
+            - ✅ API Gateway with Lambda proxy
+            - ✅ DSP Agent (calculator)
+            - ✅ Research Agent (calculator + HTTP requests)
+            - ✅ Coding Agent (calculator + Python REPL)
+            - ✅ AG-UI protocol support
+
+            ### Test It
+            Try chatting with the agents - they're fully functional!
 
             <details>
             <summary>Preview Details</summary>
 
-            - **Bucket:** \`${bucketName}\`
+            - **Stacks:** DSPAgentStack-PR${prNumber}, ResearchAgentStack-PR${prNumber}, CodingAgentStack-PR${prNumber}, UIStack-PR${prNumber}
             - **Region:** \`${{ env.AWS_REGION }}\`
             - **PR:** #${prNumber}
             - **Commit:** ${context.sha.substring(0, 7)}
 
-            The preview will be automatically cleaned up when the PR is closed.
+            The preview stacks will be automatically deleted when the PR is closed.
             </details>`;
 
             // Find existing preview comment
@@ -166,23 +184,44 @@ jobs:
       id-token: write
       contents: read
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install CDK CLI
+        run: npm install -g aws-cdk
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.13
+
+      - name: Install dependencies
+        run: uv sync
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Delete preview bucket
+      - name: Delete preview stacks
         run: |
           PR_NUMBER=${{ github.event.pull_request.number }}
-          BUCKET_NAME="iker-agents-ui-preview-pr-${PR_NUMBER}"
 
-          if aws s3api head-bucket --bucket "$BUCKET_NAME" 2>/dev/null; then
-            echo "Cleaning up preview bucket: $BUCKET_NAME"
-            aws s3 rm s3://$BUCKET_NAME --recursive
-            aws s3 rb s3://$BUCKET_NAME
-            echo "Preview bucket deleted"
-          else
-            echo "Preview bucket not found, nothing to clean up"
-          fi
+          echo "🧹 Cleaning up preview stacks for PR ${PR_NUMBER}..."
+
+          # Destroy all preview stacks
+          cdk destroy --all \
+            --context preview=true \
+            --context pr=${PR_NUMBER} \
+            --force || true
+
+          echo "✅ Preview stacks deleted"
 

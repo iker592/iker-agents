@@ -4,6 +4,9 @@ on:
   pull_request:
     branches: [main]
 
+env:
+  AWS_REGION: us-east-1
+
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
@@ -23,4 +26,163 @@ jobs:
 
       - name: PR checks
         run: make pipeline-pr
+
+  ui-preview:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Build UI for preview
+        run: |
+          cd ui
+          bun install
+          # Use placeholder API URL for preview
+          VITE_API_URL=https://placeholder-api.example.com bun run build
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy UI to preview bucket
+        id: deploy
+        run: |
+          PR_NUMBER=${{ github.event.pull_request.number }}
+          BUCKET_NAME="iker-agents-ui-preview-pr-${PR_NUMBER}"
+
+          # Create or update bucket with website configuration
+          if ! aws s3api head-bucket --bucket "$BUCKET_NAME" 2>/dev/null; then
+            echo "Creating preview bucket: $BUCKET_NAME"
+            aws s3 mb s3://$BUCKET_NAME --region ${{ env.AWS_REGION }}
+
+            # Enable static website hosting
+            aws s3 website s3://$BUCKET_NAME \
+              --index-document index.html \
+              --error-document index.html
+
+            # Make bucket public for preview
+            aws s3api put-public-access-block \
+              --bucket $BUCKET_NAME \
+              --public-access-block-configuration \
+                "BlockPublicAcls=false,IgnorePublicAcls=false,BlockPublicPolicy=false,RestrictPublicBuckets=false"
+
+            # Add bucket policy for public read
+            cat > /tmp/bucket-policy.json <<EOF
+          {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "PublicReadGetObject",
+                "Effect": "Allow",
+                "Principal": "*",
+                "Action": "s3:GetObject",
+                "Resource": "arn:aws:s3:::${BUCKET_NAME}/*"
+              }
+            ]
+          }
+          EOF
+            aws s3api put-bucket-policy --bucket $BUCKET_NAME --policy file:///tmp/bucket-policy.json
+          fi
+
+          # Sync UI files to bucket
+          cd ui
+          aws s3 sync dist/ s3://$BUCKET_NAME/ --delete
+
+          # Get website URL
+          PREVIEW_URL="http://${BUCKET_NAME}.s3-website-${AWS_REGION}.amazonaws.com"
+          echo "preview_url=$PREVIEW_URL" >> $GITHUB_OUTPUT
+          echo "bucket_name=$BUCKET_NAME" >> $GITHUB_OUTPUT
+
+      - name: Comment PR with preview URL
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const previewUrl = '${{ steps.deploy.outputs.preview_url }}';
+            const bucketName = '${{ steps.deploy.outputs.bucket_name }}';
+            const prNumber = ${{ github.event.pull_request.number }};
+
+            const body = `## 🚀 UI Preview Deployed
+
+            Your UI changes have been deployed to a preview environment!
+
+            **Preview URL:** ${previewUrl}
+
+            **Note:** This preview uses a placeholder API URL. To test with real agents, you'll need to deploy the full stack.
+
+            <details>
+            <summary>Preview Details</summary>
+
+            - **Bucket:** \`${bucketName}\`
+            - **Region:** \`${{ env.AWS_REGION }}\`
+            - **PR:** #${prNumber}
+            - **Commit:** ${context.sha.substring(0, 7)}
+
+            The preview will be automatically cleaned up when the PR is closed.
+            </details>`;
+
+            // Find existing preview comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+            });
+
+            const previewComment = comments.find(comment =>
+              comment.user.type === 'Bot' &&
+              comment.body.includes('UI Preview Deployed')
+            );
+
+            if (previewComment) {
+              // Update existing comment
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: previewComment.id,
+                body: body,
+              });
+            } else {
+              // Create new comment
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body: body,
+              });
+            }
+
+  cleanup-preview:
+    runs-on: ubuntu-latest
+    if: github.event.action == 'closed'
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Delete preview bucket
+        run: |
+          PR_NUMBER=${{ github.event.pull_request.number }}
+          BUCKET_NAME="iker-agents-ui-preview-pr-${PR_NUMBER}"
+
+          if aws s3api head-bucket --bucket "$BUCKET_NAME" 2>/dev/null; then
+            echo "Cleaning up preview bucket: $BUCKET_NAME"
+            aws s3 rm s3://$BUCKET_NAME --recursive
+            aws s3 rb s3://$BUCKET_NAME
+            echo "Preview bucket deleted"
+          else
+            echo "Preview bucket not found, nothing to clean up"
+          fi
 

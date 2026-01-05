@@ -32,7 +32,19 @@ Bedrock AgentCore Runtimes (DSP, Research, Coding agents)
 
 The UI is automatically deployed when you push to the `main` branch via GitHub Actions.
 
-### Option 2: Manual Deployment
+### Option 2: PR Preview Deployments (New!)
+
+When you open a PR, the UI is automatically deployed to a preview S3 bucket:
+- **Automatic**: Creates a unique preview bucket per PR (`iker-agents-ui-preview-pr-{number}`)
+- **PR Comment**: Adds a comment to your PR with the preview URL
+- **Auto-Cleanup**: Deletes the preview bucket when the PR is closed
+- **Fast**: Preview is available within ~2 minutes
+
+Example preview URL: `http://iker-agents-ui-preview-pr-123.s3-website-us-east-1.amazonaws.com`
+
+**Note:** PR previews use a placeholder API URL. To test with real agents, deploy the full stack.
+
+### Option 3: Manual Deployment
 
 ```bash
 # Ensure AWS credentials are configured
@@ -42,7 +54,7 @@ aws configure
 ./scripts/deploy_ui.sh
 ```
 
-### Option 3: CDK Direct
+### Option 4: CDK Direct
 
 ```bash
 # Install UI dependencies
@@ -179,7 +191,41 @@ The Lambda proxy supports AG-UI protocol which provides rich event streams:
 
 To enable AG-UI protocol, set `stream_agui: true` in the request.
 
+## PR Preview Workflow
+
+The PR preview deployment workflow (`pr.yml`) includes three jobs:
+
+### 1. `lint-and-test`
+Runs on every PR to validate code quality:
+- Python linting with ruff
+- Unit tests with pytest
+
+### 2. `ui-preview`
+Deploys UI to a preview S3 bucket:
+- Creates bucket: `iker-agents-ui-preview-pr-{number}`
+- Enables static website hosting
+- Syncs built UI files
+- Posts preview URL as PR comment
+- Updates comment on subsequent pushes
+
+**Permissions required:**
+- `id-token: write` - For AWS OIDC authentication
+- `contents: read` - To checkout code
+- `pull-requests: write` - To comment on PR
+
+### 3. `cleanup-preview`
+Automatically cleans up when PR is closed:
+- Triggered on PR close (merged or not)
+- Deletes all files from preview bucket
+- Removes the bucket
+
 ## Troubleshooting
+
+### PR preview not deploying
+- Check that PR is from same repo (not a fork)
+- Verify AWS credentials are configured in secrets
+- Check GitHub Actions logs for errors
+- Ensure bucket name doesn't conflict
 
 ### UI not loading
 - Check CloudFront distribution status

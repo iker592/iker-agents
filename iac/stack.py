@@ -23,11 +23,16 @@ class DSPAgentStack(Stack):
             str(Path(__file__).parent.parent.resolve())
         )
 
-        memory = Memory(self, "Memory", memory_name="memory")
+        # Extract suffix from construct_id (e.g., "DSPAgentStack-PR5" -> "_pr5")
+        suffix = construct_id.replace("DSPAgentStack", "").lower().replace("-", "_")
+        memory_name = f"memory{suffix}" if suffix else "memory"
+
+        memory = Memory(self, "Memory", memory_name=memory_name)
+        runtime_name = f"dsp_agent{suffix}" if suffix else "dsp_agent"
         runtime = Runtime(
             self,
             "DSPAgent",
-            runtime_name="dsp_agent",
+            runtime_name=runtime_name,
             agent_runtime_artifact=dspagent_runtime_artifact,
             environment_variables={
                 "AWS_REGION": self.region,

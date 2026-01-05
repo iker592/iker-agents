@@ -42,6 +42,8 @@ help:
 	@echo "    make deploy-all  Deploy ALL agent stacks (dsp, research, coding, ui)"
 	@echo "    make deploy-all-preview PR=N  Deploy ALL stacks for PR preview"
 	@echo "    make deploy-oidc Deploy GitHub OIDC stack (one-time setup for CI/CD)"
+	@echo "    make update-ui   Update UI with latest code changes"
+	@echo "    make update-ui-preview PR=N  Update preview UI for PR"
 	@echo ""
 	@echo "  Endpoint Promotion"
 	@echo "    make promote-canary VERSION=N  Update canary endpoint to version N"
@@ -252,6 +254,19 @@ deploy-all-preview: aws-auth
 	@cat cdk-outputs-pr-$(PR).json | python3 -c "import sys,json; d=json.load(sys.stdin); print('  UI: ' + d.get('UIStack-PR$(PR)', {}).get('UIDistributionURL', 'N/A')); print('  API: ' + d.get('UIStack-PR$(PR)', {}).get('APIURL', 'N/A'))"
 	@echo ""
 	@echo "To clean up: make cleanup-preview PR=$(PR)"
+
+update-ui: aws-auth
+	@echo "🔄 Updating UI deployment..."
+	@bash scripts/update_ui.sh
+
+update-ui-preview: aws-auth
+	@if [ -z "$(PR)" ]; then \
+		echo "Usage: make update-ui-preview PR=<number>"; \
+		echo "Example: make update-ui-preview PR=5"; \
+		exit 1; \
+	fi
+	@echo "🔄 Updating preview UI for PR $(PR)..."
+	@bash scripts/update_ui.sh --preview $(PR)
 
 promote-canary: aws-auth
 	@if [ -z "$(VERSION)" ]; then \

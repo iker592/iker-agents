@@ -1,0 +1,72 @@
+@theme {
+  --color-background: oklch(98.5% 0.002 247);
+  --color-foreground: oklch(14% 0.004 285);
+  --color-card: oklch(100% 0 0);
+  --color-card-foreground: oklch(14% 0.004 285);
+  --color-popover: oklch(100% 0 0);
+  --color-popover-foreground: oklch(14% 0.004 285);
+  --color-primary: oklch(21% 0.006 285);
+  --color-primary-foreground: oklch(98% 0 0);
+  --color-secondary: oklch(96% 0.001 286);
+  --color-secondary-foreground: oklch(21% 0.006 285);
+  --color-muted: oklch(96% 0.001 286);
+  --color-muted-foreground: oklch(55% 0.014 285);
+  --color-accent: oklch(96% 0.001 286);
+  --color-accent-foreground: oklch(21% 0.006 285);
+  --color-destructive: oklch(57% 0.245 27);
+  --color-destructive-foreground: oklch(98% 0 0);
+  --color-border: oklch(91% 0.006 286);
+  --color-input: oklch(91% 0.006 286);
+  --color-ring: oklch(70% 0.17 250);
+  --color-success: oklch(65% 0.2 145);
+  --color-success-foreground: oklch(98% 0 0);
+  --color-warning: oklch(75% 0.18 85);
+  --color-warning-foreground: oklch(21% 0.006 285);
+  --color-info: oklch(60% 0.2 250);
+  --color-info-foreground: oklch(98% 0 0);
+  --radius-sm: 0.25rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+  --radius-2xl: 1rem;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  @theme {
+    --color-background: oklch(14% 0.004 285);
+    --color-foreground: oklch(98% 0 0);
+    --color-card: oklch(19% 0.006 285);
+    --color-card-foreground: oklch(98% 0 0);
+    --color-popover: oklch(19% 0.006 285);
+    --color-popover-foreground: oklch(98% 0 0);
+    --color-primary: oklch(98% 0 0);
+    --color-primary-foreground: oklch(21% 0.006 285);
+    --color-secondary: oklch(25% 0.008 285);
+    --color-secondary-foreground: oklch(98% 0 0);
+    --color-muted: oklch(25% 0.008 285);
+    --color-muted-foreground: oklch(65% 0.01 285);
+    --color-accent: oklch(25% 0.008 285);
+    --color-accent-foreground: oklch(98% 0 0);
+    --color-destructive: oklch(62% 0.25 25);
+    --color-destructive-foreground: oklch(98% 0 0);
+    --color-border: oklch(25% 0.008 285);
+    --color-input: oklch(25% 0.008 285);
+    --color-ring: oklch(70% 0.17 250);
+    --color-success: oklch(65% 0.2 145);
+    --color-success-foreground: oklch(98% 0 0);
+    --color-warning: oklch(75% 0.18 85);
+    --color-warning-foreground: oklch(21% 0.006 285);
+    --color-info: oklch(60% 0.2 250);
+    --color-info-foreground: oklch(98% 0 0);
+  }
+}

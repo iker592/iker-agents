@@ -61,5 +61,5 @@ export async function invokeAgent(request: InvokeRequest): Promise<InvokeRespons
  * Generate a unique session ID
  */
 export function generateSessionId(): string {
-  return 'session-${crypto.randomUUID().replace(/-/g, '')}’;
+  return `session-${crypto.randomUUID().replace(/-/g, '')}`;
 }

@@ -68,7 +68,7 @@ import boto3
 import os
 from typing import Any
 
-bedrock_agent = boto3.client('bedrock-agent-runtime')
+bedrock_agentcore = boto3.client('bedrock-agentcore-runtime')
 
 # Runtime ARNs from environment
 RUNTIME_ARNS = json.loads(os.environ.get('RUNTIME_ARNS', '{}'))
@@ -114,13 +114,11 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                 'body': json.dumps({'agents': agents})
             }
 
-        # POST /invoke - Invoke an agent with AG-UI protocol support
+        # POST /invoke - Invoke an agent
         if path == '/invoke' and method == 'POST':
             agent_id = body.get('agent_id')
             input_text = body.get('input', '')
             session_id = body.get('session_id')
-            user_id = body.get('user_id', 'default-user')
-            stream_agui = body.get('stream_agui', True)  # Default to AG-UI
 
             if not agent_id or agent_id not in RUNTIME_ARNS:
                 return {
@@ -134,26 +132,23 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
             runtime_arn = RUNTIME_ARNS[agent_id]
 
-            # Build invoke parameters
+            # Extract runtime ID from ARN
+            runtime_id = runtime_arn.split('/')[-1]
+
+            # Build invoke parameters for AgentCore
             invoke_params = {
-                'agentRuntimeArn': runtime_arn,
-                'input': input_text,
-                'userId': user_id
+                'agentRuntimeId': runtime_id,
+                'inputText': input_text,
             }
 
             if session_id:
                 invoke_params['sessionId'] = session_id
 
-            # Add AG-UI streaming hint if requested
-            if stream_agui:
-                invoke_params['streamingHint'] = {'type': 'AG_UI'}
+            response = bedrock_agentcore.invoke_agent(**invoke_params)
 
-            response = bedrock_agent.invoke_agent(**invoke_params)
-
-            # Collect response chunks and events
+            # Collect response chunks
             output = ""
             new_session_id = session_id
-            events = []
 
             if 'completion' in response:
                 for event in response['completion']:
@@ -172,29 +167,10 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                                 chunk_text = str(chunk_data)
                             output += chunk_text
 
-                            if stream_agui:
-                                events.append({
-                                    'type': 'content',
-                                    'data': chunk_text
-                                })
-
-                    # Collect AG-UI protocol events
-                    if stream_agui:
-                        for key in ['toolUse', 'thinking', 'metadata']:
-                            if key in event:
-                                events.append({
-                                    'type': key,
-                                    'data': event[key]
-                                })
-
             result = {
                 'output': output,
                 'session_id': new_session_id,
             }
-
-            # Add AG-UI events if requested
-            if stream_agui and events:
-                result['events'] = events
 
             return {
                 'statusCode': 200,
@@ -226,13 +202,11 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             },
         )
 
-        # Grant Lambda permissions to invoke Bedrock agents
+        # Grant Lambda permissions to invoke AgentCore runtimes
         agent_proxy_lambda.add_to_role_policy(
             iam.PolicyStatement(
                 actions=[
-                    "bedrock-agent-runtime:InvokeAgent",
-                    "bedrock-agent-runtime:Retrieve",
-                    "bedrock-agent-runtime:RetrieveAndGenerate",
+                    "bedrock-agentcore-runtime:InvokeAgent",
                 ],
                 resources=["*"],
             )

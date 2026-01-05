@@ -68,7 +68,7 @@ import boto3
 import os
 from typing import Any
 
-bedrock_agentcore = boto3.client('bedrock-agentcore-runtime')
+client = boto3.client('bedrock-agentcore')
 
 # Runtime ARNs from environment
 RUNTIME_ARNS = json.loads(os.environ.get('RUNTIME_ARNS', '{}'))
@@ -118,7 +118,8 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         if path == '/invoke' and method == 'POST':
             agent_id = body.get('agent_id')
             input_text = body.get('input', '')
-            session_id = body.get('session_id')
+            session_id = body.get('session_id', f'session-{os.urandom(8).hex()}')
+            user_id = body.get('user_id', 'default-user')
 
             if not agent_id or agent_id not in RUNTIME_ARNS:
                 return {
@@ -132,44 +133,30 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
             runtime_arn = RUNTIME_ARNS[agent_id]
 
-            # Extract runtime ID from ARN
-            runtime_id = runtime_arn.split('/')[-1]
-
-            # Build invoke parameters for AgentCore
-            invoke_params = {
-                'agentRuntimeId': runtime_id,
-                'inputText': input_text,
+            # Build payload for AgentCore
+            payload = {
+                'input': input_text,
+                'user_id': user_id,
+                'session_id': session_id,
+                'stream': False
             }
 
-            if session_id:
-                invoke_params['sessionId'] = session_id
+            # Invoke AgentCore runtime
+            invoke_params = {
+                'agentRuntimeArn': runtime_arn,
+                'runtimeSessionId': session_id,
+                'payload': json.dumps(payload)
+            }
 
-            response = bedrock_agentcore.invoke_agent(**invoke_params)
+            response = client.invoke_agent_runtime(**invoke_params)
 
-            # Collect response chunks
-            output = ""
-            new_session_id = session_id
-
-            if 'completion' in response:
-                for event in response['completion']:
-                    # Extract session ID
-                    if 'sessionId' in event:
-                        new_session_id = event['sessionId']
-
-                    # Handle chunk data
-                    if 'chunk' in event:
-                        chunk = event['chunk']
-                        if 'bytes' in chunk:
-                            chunk_data = chunk['bytes']
-                            if isinstance(chunk_data, bytes):
-                                chunk_text = chunk_data.decode('utf-8')
-                            else:
-                                chunk_text = str(chunk_data)
-                            output += chunk_text
+            # Parse non-streaming response
+            response_body = response['response'].read()
+            response_data = json.loads(response_body)
 
             result = {
-                'output': output,
-                'session_id': new_session_id,
+                'output': response_data.get('output', ''),
+                'session_id': session_id,
             }
 
             return {
@@ -206,7 +193,7 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         agent_proxy_lambda.add_to_role_policy(
             iam.PolicyStatement(
                 actions=[
-                    "bedrock-agentcore-runtime:InvokeAgent",
+                    "bedrock-agentcore:InvokeAgentRuntime",
                 ],
                 resources=["*"],
             )

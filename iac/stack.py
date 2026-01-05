@@ -98,6 +98,10 @@ class DSPAgentStack(Stack):
             self, "ProdEndpointArn", value=prod_endpoint.attr_agent_runtime_endpoint_arn
         )
 
+        # Store references for cross-stack usage
+        self.runtime = runtime
+        self.memory = memory
+
     def _is_transaction_search_active(self) -> bool:
         try:
             xray_client = boto3.client("xray", region_name="us-east-1")

@@ -61,11 +61,11 @@ class AgentStack(Stack):
         if extra_environment_variables:
             env_vars.update(extra_environment_variables)
 
-        # Create runtime
+        # Create runtime (name pattern: must start with letter, only letters/numbers/underscores)
         runtime = Runtime(
             self,
             f"{agent_name}Runtime",
-            runtime_name=agent_name.lower().replace(" ", "_"),
+            runtime_name=sanitized_name,
             agent_runtime_artifact=artifact,
             environment_variables=env_vars,
         )

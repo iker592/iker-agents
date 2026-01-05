@@ -51,6 +51,18 @@ export function Chat() {
           'analyst' as const,
     status: agent.status === 'active' ? 'active' as const : 'idle' as const,
     description: `${agent.name} is ready to help`,
+    model: 'claude-sonnet-4-5',
+    systemPrompt: '',
+    tools: [],
+    metrics: {
+      totalSessions: 0,
+      totalMessages: 0,
+      avgResponseTime: 0,
+      successRate: 0,
+      tokensUsed: 0,
+    },
+    createdAt: new Date(),
+    lastActiveAt: new Date(),
   })), [agents])
 
   const selectedAgent = uiAgents.find((a) => a.id === selectedAgentId)

@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { useSearchParams } from "react-router-dom"
 import { Bot, ChevronDown, Brain } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -6,7 +6,8 @@ import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { ChatInterface } from "@/components/agents/ChatInterface"
 import { ThoughtLog } from "@/components/agents/ThoughtLog"
-import { mockAgents, mockMessages, mockThoughtLog } from "@/data/agents"
+import { useAgents } from "@/hooks/useAgents"
+import { invokeAgent, generateSessionId } from "@/services/api"
 import { cn } from "@/lib/utils"
 import type { AgentMessage } from "@/types/agent"
 
@@ -26,32 +27,84 @@ const typeColors = {
 
 export function Chat() {
   const [searchParams] = useSearchParams()
-  const agentId = searchParams.get("agent") || mockAgents[0].id
-  const [selectedAgentId, setSelectedAgentId] = useState(agentId)
+  const { agents, loading, error } = useAgents()
+  const [selectedAgentId, setSelectedAgentId] = useState<string>("")
   const [showThoughts, setShowThoughts] = useState(true)
-  const [messages, setMessages] = useState<AgentMessage[]>(mockMessages)
+  const [messages, setMessages] = useState<AgentMessage[]>([])
+  const [sessionId] = useState(() => generateSessionId())
+  const [isProcessing, setIsProcessing] = useState(false)
 
-  const selectedAgent = mockAgents.find((a) => a.id === selectedAgentId)!
+  // Set initial agent from URL or first agent
+  useEffect(() => {
+    if (agents.length > 0 && !selectedAgentId) {
+      const agentId = searchParams.get("agent") || agents[0].id
+      setSelectedAgentId(agentId)
+    }
+  }, [agents, selectedAgentId, searchParams])
 
-  const handleSendMessage = (content: string) => {
+  // Map API agents to UI agent format
+  const uiAgents = useMemo(() => agents.map(agent => ({
+    id: agent.id,
+    name: agent.name,
+    type: agent.id.includes('research') ? 'research' as const :
+          agent.id.includes('coding') ? 'coding' as const :
+          'analyst' as const,
+    status: agent.status === 'active' ? 'active' as const : 'idle' as const,
+    description: `${agent.name} is ready to help`,
+  })), [agents])
+
+  const selectedAgent = uiAgents.find((a) => a.id === selectedAgentId)
+
+  const handleSendMessage = async (content: string) => {
+    if (!selectedAgentId || isProcessing) return
+
     const newMessage: AgentMessage = {
       id: `msg-${Date.now()}`,
       role: "user",
       content,
       timestamp: new Date(),
     }
-    setMessages([...messages, newMessage])
+    setMessages((prev) => [...prev, newMessage])
+    setIsProcessing(true)
 
-    // Simulate agent response
-    setTimeout(() => {
-      const response: AgentMessage = {
+    try {
+      const response = await invokeAgent({
+        agent_id: selectedAgentId,
+        input: content,
+        session_id: sessionId,
+      })
+
+      const assistantMessage: AgentMessage = {
         id: `msg-${Date.now() + 1}`,
         role: "assistant",
-        content: `I received your message: "${content}". This is a simulated response from ${selectedAgent.name}.`,
+        content: response.output,
         timestamp: new Date(),
       }
-      setMessages((prev) => [...prev, response])
-    }, 1500)
+      setMessages((prev) => [...prev, assistantMessage])
+    } catch (error) {
+      console.error('Failed to invoke agent:', error)
+      const errorMessage: AgentMessage = {
+        id: `msg-${Date.now() + 1}`,
+        role: "assistant",
+        content: `Error: ${error instanceof Error ? error.message : 'Failed to get response'}`,
+        timestamp: new Date(),
+      }
+      setMessages((prev) => [...prev, errorMessage])
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
+  if (loading) {
+    return <div className="flex items-center justify-center h-[calc(100vh-8rem)]">Loading agents...</div>
+  }
+
+  if (error) {
+    return <div className="flex items-center justify-center h-[calc(100vh-8rem)] text-red-500">Error: {error}</div>
+  }
+
+  if (!selectedAgent) {
+    return <div className="flex items-center justify-center h-[calc(100vh-8rem)]">No agents available</div>
   }
 
   return (
@@ -64,7 +117,7 @@ export function Chat() {
         <CardContent className="p-0">
           <ScrollArea className="h-[calc(100vh-14rem)]">
             <div className="space-y-1 p-2">
-              {mockAgents.map((agent) => (
+              {uiAgents.map((agent) => (
                 <button
                   key={agent.id}
                   onClick={() => setSelectedAgentId(agent.id)}
@@ -173,7 +226,7 @@ export function Chat() {
         </CardHeader>
         {showThoughts && (
           <CardContent className="h-[calc(100%-3.5rem)] p-4">
-            <ThoughtLog entries={mockThoughtLog} />
+            <ThoughtLog entries={[]} />
           </CardContent>
         )}
       </Card>

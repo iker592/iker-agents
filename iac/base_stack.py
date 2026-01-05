@@ -43,10 +43,12 @@ class AgentStack(Stack):
         )
 
         # Create memory (name pattern: ^[a-zA-Z][a-zA-Z0-9_]{0,47}$)
+        # Sanitize agent_name: lowercase, replace spaces and hyphens with underscores
+        sanitized_name = agent_name.lower().replace(' ', '_').replace('-', '_')
         memory = Memory(
             self,
             "Memory",
-            memory_name=f"{agent_name.lower().replace(' ', '_')}_memory",
+            memory_name=f"{sanitized_name}_memory",
         )
 
         # Build environment variables

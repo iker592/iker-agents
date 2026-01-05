@@ -66,6 +66,7 @@ class UIStack(Stack):
 import json
 import boto3
 import os
+import uuid
 from typing import Any
 
 client = boto3.client('bedrock-agentcore')
@@ -118,7 +119,8 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         if path == '/invoke' and method == 'POST':
             agent_id = body.get('agent_id')
             input_text = body.get('input', '')
-            session_id = body.get('session_id', f'session-{os.urandom(8).hex()}')
+            # Generate session ID with minimum 33 chars (uuid.hex = 32 chars)
+            session_id = body.get('session_id') or f"s-{uuid.uuid4().hex}"
             user_id = body.get('user_id', 'default-user')
 
             if not agent_id or agent_id not in RUNTIME_ARNS:

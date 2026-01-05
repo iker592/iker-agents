@@ -58,8 +58,36 @@ jobs:
       - name: Run unit tests
         run: uv run pytest -m unit
 
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Build UI (initial)
+        run: |
+          cd ui
+          bun install
+          VITE_API_URL=placeholder bun run build
+
       - name: Deploy all stacks
         run: cdk deploy --all --require-approval never --outputs-file cdk-outputs.json
+
+      - name: Rebuild UI with API URL
+        run: |
+          API_URL=$(cat cdk-outputs.json | python3 -c "import sys,json; print(json.load(sys.stdin).get('UIStack', {}).get('APIURL', ''))")
+          if [ -n "$API_URL" ]; then
+            echo "Rebuilding UI with API_URL: $API_URL"
+            cd ui
+            VITE_API_URL=$API_URL bun run build
+            # Sync to S3 bucket
+            BUCKET_NAME=$(cat ../cdk-outputs.json | python3 -c "import sys,json; print(json.load(sys.stdin).get('UIStack', {}).get('UIBucketName', ''))")
+            if [ -n "$BUCKET_NAME" ]; then
+              aws s3 sync dist/ s3://$BUCKET_NAME/ --delete
+              # Invalidate CloudFront cache
+              DISTRIBUTION_ID=$(aws cloudfront list-distributions --query "DistributionList.Items[?Origins.Items[0].DomainName=='$BUCKET_NAME.s3.amazonaws.com'].Id | [0]" --output text)
+              if [ -n "$DISTRIBUTION_ID" ]; then
+                aws cloudfront create-invalidation --distribution-id $DISTRIBUTION_ID --paths "/*"
+              fi
+            fi
+          fi
 
       - name: Update dev endpoints
         run: |

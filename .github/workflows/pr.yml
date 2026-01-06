@@ -74,8 +74,11 @@ jobs:
         run: |
           # Check only files changed in the latest commit (not entire PR)
           echo "📝 Detecting changes in latest commit..."
+          echo "Current commit: ${{ github.sha }}"
+          echo ""
 
-          CHANGED_FILES=$(git diff-tree --no-commit-id --name-only -r HEAD)
+          # Get changed files in this commit
+          CHANGED_FILES=$(git show --pretty="" --name-only HEAD)
 
           echo "Changed files in this commit:"
           echo "$CHANGED_FILES"
@@ -87,6 +90,7 @@ jobs:
             echo "✅ DSP changed"
           else
             echo "dsp_changed=false" >> $GITHUB_OUTPUT
+            echo "❌ DSP not changed"
           fi
 
           # Check Research agent
@@ -95,6 +99,7 @@ jobs:
             echo "✅ Research changed"
           else
             echo "research_changed=false" >> $GITHUB_OUTPUT
+            echo "❌ Research not changed"
           fi
 
           # Check Coding agent
@@ -103,6 +108,7 @@ jobs:
             echo "✅ Coding changed"
           else
             echo "coding_changed=false" >> $GITHUB_OUTPUT
+            echo "❌ Coding not changed"
           fi
 
           # Check UI
@@ -111,6 +117,7 @@ jobs:
             echo "✅ UI changed"
           else
             echo "ui_changed=false" >> $GITHUB_OUTPUT
+            echo "❌ UI not changed"
           fi
 
           # Check infrastructure
@@ -119,7 +126,16 @@ jobs:
             echo "✅ Infrastructure changed"
           else
             echo "infrastructure_changed=false" >> $GITHUB_OUTPUT
+            echo "❌ Infrastructure not changed"
           fi
+
+          echo ""
+          echo "Summary:"
+          echo "  DSP: $(echo "$CHANGED_FILES" | grep -qE '^(agents/dsp/|iac/stack\.py)' && echo "YES" || echo "NO")"
+          echo "  Research: $(echo "$CHANGED_FILES" | grep -qE '^(agents/research/|iac/research_stack\.py)' && echo "YES" || echo "NO")"
+          echo "  Coding: $(echo "$CHANGED_FILES" | grep -qE '^(agents/coding/|iac/coding_stack\.py)' && echo "YES" || echo "NO")"
+          echo "  UI: $(echo "$CHANGED_FILES" | grep -qE '^(ui/|iac/ui_stack\.py)' && echo "YES" || echo "NO")"
+          echo "  Infrastructure: $(echo "$CHANGED_FILES" | grep -qE '^(iac/base_stack\.py|iac/app\.py)' && echo "YES" || echo "NO")"
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4

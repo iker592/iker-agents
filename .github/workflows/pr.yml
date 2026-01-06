@@ -36,6 +36,8 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for proper diff
 
       - name: Set up QEMU for ARM64 builds
         uses: docker/setup-qemu-action@v3
@@ -72,15 +74,19 @@ jobs:
         run: |
           set -x  # Enable debugging
 
-          # Detect which parts of the codebase changed
-          git fetch origin ${{ github.base_ref }}
+          # Fetch base branch for comparison
+          git fetch origin ${{ github.base_ref }} --depth=100
 
           echo "Changed files:"
-          git diff --name-only origin/${{ github.base_ref }}...HEAD
+          git diff --name-only origin/${{ github.base_ref }}...HEAD || git diff --name-only HEAD~1 HEAD
           echo ""
 
-          # Store changed files
-          CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+          # Store changed files (fallback to HEAD~1 if merge base not found)
+          CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD 2>/dev/null || git diff --name-only HEAD~10 HEAD)
+
+          echo "Detected changes:"
+          echo "$CHANGED_FILES"
+          echo ""
 
           # Check DSP agent
           if echo "$CHANGED_FILES" | grep -qE '^(agents/dsp/|iac/stack\.py)'; then

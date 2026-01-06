@@ -58,8 +58,9 @@ export async function invokeAgent(request: InvokeRequest): Promise<InvokeRespons
 }
 
 /**
- * Generate a unique session ID
+ * Generate a unique session ID (minimum 33 chars required by AWS)
  */
 export function generateSessionId(): string {
+  // Generate crypto-random UUID (32 hex chars) with 'session-' prefix = 40 chars total
   return `session-${crypto.randomUUID().replace(/-/g, '')}`;
 }

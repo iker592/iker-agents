@@ -1,3 +1,4 @@
+"""UI Stack with AgentCore Lambda proxy and response debugging."""
 import json
 from pathlib import Path
 

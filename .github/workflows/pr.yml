@@ -70,35 +70,54 @@ jobs:
       - name: Detect changed files
         id: changes
         run: |
+          set -x  # Enable debugging
+
           # Detect which parts of the codebase changed
           git fetch origin ${{ github.base_ref }}
 
-          if git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -E '^(agents/dsp/|iac/stack\.py)'; then
+          echo "Changed files:"
+          git diff --name-only origin/${{ github.base_ref }}...HEAD
+          echo ""
+
+          # Store changed files
+          CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+
+          # Check DSP agent
+          if echo "$CHANGED_FILES" | grep -qE '^(agents/dsp/|iac/stack\.py)'; then
             echo "dsp_changed=true" >> $GITHUB_OUTPUT
+            echo "✅ DSP changed"
           else
             echo "dsp_changed=false" >> $GITHUB_OUTPUT
           fi
 
-          if git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -E '^(agents/research/|iac/research_stack\.py)'; then
+          # Check Research agent
+          if echo "$CHANGED_FILES" | grep -qE '^(agents/research/|iac/research_stack\.py)'; then
             echo "research_changed=true" >> $GITHUB_OUTPUT
+            echo "✅ Research changed"
           else
             echo "research_changed=false" >> $GITHUB_OUTPUT
           fi
 
-          if git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -E '^(agents/coding/|iac/coding_stack\.py)'; then
+          # Check Coding agent
+          if echo "$CHANGED_FILES" | grep -qE '^(agents/coding/|iac/coding_stack\.py)'; then
             echo "coding_changed=true" >> $GITHUB_OUTPUT
+            echo "✅ Coding changed"
           else
             echo "coding_changed=false" >> $GITHUB_OUTPUT
           fi
 
-          if git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -E '^(ui/|iac/ui_stack\.py)'; then
+          # Check UI
+          if echo "$CHANGED_FILES" | grep -qE '^(ui/|iac/ui_stack\.py)'; then
             echo "ui_changed=true" >> $GITHUB_OUTPUT
+            echo "✅ UI changed"
           else
             echo "ui_changed=false" >> $GITHUB_OUTPUT
           fi
 
-          if git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -E '^(iac/base_stack\.py|iac/app\.py)'; then
+          # Check infrastructure
+          if echo "$CHANGED_FILES" | grep -qE '^(iac/base_stack\.py|iac/app\.py)'; then
             echo "infrastructure_changed=true" >> $GITHUB_OUTPUT
+            echo "✅ Infrastructure changed"
           else
             echo "infrastructure_changed=false" >> $GITHUB_OUTPUT
           fi

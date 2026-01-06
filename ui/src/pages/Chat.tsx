@@ -151,15 +151,27 @@ export function Chat() {
   }
 
   if (loading) {
-    return <div className="flex items-center justify-center h-[calc(100vh-8rem)]">Loading agents...</div>
+    return (
+      <div className="flex items-center justify-center h-[calc(100vh-8rem)]">
+        Loading agents...
+      </div>
+    )
   }
 
   if (error) {
-    return <div className="flex items-center justify-center h-[calc(100vh-8rem)] text-red-500">Error: {error}</div>
+    return (
+      <div className="flex items-center justify-center h-[calc(100vh-8rem)] text-red-500">
+        Error: {error}
+      </div>
+    )
   }
 
   if (!selectedAgent) {
-    return <div className="flex items-center justify-center h-[calc(100vh-8rem)]">No agents available</div>
+    return (
+      <div className="flex items-center justify-center h-[calc(100vh-8rem)]">
+        No agents available
+      </div>
+    )
   }
 
   return (

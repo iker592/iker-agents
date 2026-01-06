@@ -72,13 +72,12 @@ jobs:
       - name: Detect changed files
         id: changes
         run: |
-          # Get list of changed files in this PR
-          echo "📝 Detecting changes in PR..."
+          # Check only files changed in the latest commit (not entire PR)
+          echo "📝 Detecting changes in latest commit..."
 
-          # Use GitHub's built-in comparison
-          CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.sha }})
+          CHANGED_FILES=$(git diff-tree --no-commit-id --name-only -r HEAD)
 
-          echo "Changed files:"
+          echo "Changed files in this commit:"
           echo "$CHANGED_FILES"
           echo ""
 

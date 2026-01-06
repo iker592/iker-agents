@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react"
-import { Send, Bot, User, Wrench, Loader2 } from "lucide-react"
+import { Send, Bot, User, Wrench, Loader2, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -11,6 +11,7 @@ interface ChatInterfaceProps {
   agent: Agent
   messages: AgentMessage[]
   onSendMessage?: (content: string) => void
+  onClearChat?: () => void
 }
 
 function formatTime(date: Date): string {
@@ -21,6 +22,7 @@ export function ChatInterface({
   agent,
   messages,
   onSendMessage,
+  onClearChat,
 }: ChatInterfaceProps) {
   const [input, setInput] = useState("")
   const [isLoading, setIsLoading] = useState(false)
@@ -150,6 +152,17 @@ export function ChatInterface({
             className="min-h-[44px] max-h-32 resize-none"
             disabled={isLoading}
           />
+          {onClearChat && messages.length > 0 && (
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              onClick={onClearChat}
+              title="Clear chat and start new session"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          )}
           <Button type="submit" size="icon" disabled={!input.trim() || isLoading}>
             <Send className="h-4 w-4" />
           </Button>

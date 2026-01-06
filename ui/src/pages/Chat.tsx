@@ -30,9 +30,15 @@ export function Chat() {
   const { agents, loading, error } = useAgents()
   const [selectedAgentId, setSelectedAgentId] = useState<string>("")
   const [showThoughts, setShowThoughts] = useState(true)
-  const [messages, setMessages] = useState<AgentMessage[]>([])
-  const [sessionId] = useState(() => generateSessionId())
   const [isProcessing, setIsProcessing] = useState(false)
+
+  // Store messages and sessions per agent
+  const [agentMessages, setAgentMessages] = useState<Record<string, AgentMessage[]>>({})
+  const [agentSessions, setAgentSessions] = useState<Record<string, string>>({})
+
+  // Current agent's messages and session
+  const messages = agentMessages[selectedAgentId] || []
+  const sessionId = agentSessions[selectedAgentId] || ""
 
   // Set initial agent from URL or first agent
   useEffect(() => {
@@ -42,10 +48,27 @@ export function Chat() {
     }
   }, [agents, selectedAgentId, searchParams])
 
-  // Clear messages when switching agents
+  // Initialize session for agent if it doesn't exist
   useEffect(() => {
-    setMessages([])
-  }, [selectedAgentId])
+    if (selectedAgentId && !agentSessions[selectedAgentId]) {
+      setAgentSessions(prev => ({
+        ...prev,
+        [selectedAgentId]: generateSessionId()
+      }))
+    }
+  }, [selectedAgentId, agentSessions])
+
+  // Clear chat - creates new session and clears messages
+  const handleClearChat = () => {
+    setAgentMessages(prev => ({
+      ...prev,
+      [selectedAgentId]: []
+    }))
+    setAgentSessions(prev => ({
+      ...prev,
+      [selectedAgentId]: generateSessionId()
+    }))
+  }
 
   // Map API agents to UI agent format
   const uiAgents = useMemo(() => agents.map(agent => ({
@@ -73,7 +96,7 @@ export function Chat() {
   const selectedAgent = uiAgents.find((a) => a.id === selectedAgentId)
 
   const handleSendMessage = async (content: string) => {
-    if (!selectedAgentId || isProcessing) return
+    if (!selectedAgentId || isProcessing || !sessionId) return
 
     const newMessage: AgentMessage = {
       id: `msg-${Date.now()}`,
@@ -81,7 +104,12 @@ export function Chat() {
       content,
       timestamp: new Date(),
     }
-    setMessages((prev) => [...prev, newMessage])
+
+    // Add user message to this agent's messages
+    setAgentMessages(prev => ({
+      ...prev,
+      [selectedAgentId]: [...(prev[selectedAgentId] || []), newMessage]
+    }))
     setIsProcessing(true)
 
     try {
@@ -97,7 +125,12 @@ export function Chat() {
         content: response.output,
         timestamp: new Date(),
       }
-      setMessages((prev) => [...prev, assistantMessage])
+
+      // Add assistant message to this agent's messages
+      setAgentMessages(prev => ({
+        ...prev,
+        [selectedAgentId]: [...(prev[selectedAgentId] || []), assistantMessage]
+      }))
     } catch (error) {
       console.error('Failed to invoke agent:', error)
       const errorMessage: AgentMessage = {
@@ -106,7 +139,12 @@ export function Chat() {
         content: `Error: ${error instanceof Error ? error.message : 'Failed to get response'}`,
         timestamp: new Date(),
       }
-      setMessages((prev) => [...prev, errorMessage])
+
+      // Add error message to this agent's messages
+      setAgentMessages(prev => ({
+        ...prev,
+        [selectedAgentId]: [...(prev[selectedAgentId] || []), errorMessage]
+      }))
     } finally {
       setIsProcessing(false)
     }
@@ -216,6 +254,7 @@ export function Chat() {
             agent={selectedAgent}
             messages={messages}
             onSendMessage={handleSendMessage}
+            onClearChat={handleClearChat}
           />
         </CardContent>
       </Card>

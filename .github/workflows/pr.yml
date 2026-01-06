@@ -72,19 +72,13 @@ jobs:
       - name: Detect changed files
         id: changes
         run: |
-          set -x  # Enable debugging
+          # Get list of changed files in this PR
+          echo "📝 Detecting changes in PR..."
 
-          # Fetch base branch for comparison
-          git fetch origin ${{ github.base_ref }} --depth=100
+          # Use GitHub's built-in comparison
+          CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.sha }})
 
           echo "Changed files:"
-          git diff --name-only origin/${{ github.base_ref }}...HEAD || git diff --name-only HEAD~1 HEAD
-          echo ""
-
-          # Store changed files (fallback to HEAD~1 if merge base not found)
-          CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD 2>/dev/null || git diff --name-only HEAD~10 HEAD)
-
-          echo "Detected changes:"
           echo "$CHANGED_FILES"
           echo ""
 

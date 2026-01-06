@@ -42,6 +42,11 @@ export function Chat() {
     }
   }, [agents, selectedAgentId, searchParams])
 
+  // Clear messages when switching agents
+  useEffect(() => {
+    setMessages([])
+  }, [selectedAgentId])
+
   // Map API agents to UI agent format
   const uiAgents = useMemo(() => agents.map(agent => ({
     id: agent.id,

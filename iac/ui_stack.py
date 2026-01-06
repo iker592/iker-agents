@@ -156,8 +156,21 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             response_body = response['response'].read()
             response_data = json.loads(response_body)
 
+            # Log full response for debugging
+            print(f"AgentCore response: {json.dumps(response_data)}")
+
+            # Extract output from response (structure may vary)
+            output = response_data.get('output', '')
+            if not output and 'text' in response_data:
+                output = response_data['text']
+            if not output and 'content' in response_data:
+                output = response_data['content']
+            if not output:
+                # If still no output, return the whole response for debugging
+                output = json.dumps(response_data)
+
             result = {
-                'output': response_data.get('output', ''),
+                'output': output,
                 'session_id': session_id,
             }
 

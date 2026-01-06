@@ -77,12 +77,16 @@ jobs:
           echo "Current commit: ${{ github.sha }}"
           echo ""
 
-          # Get changed files in this commit
-          CHANGED_FILES=$(git show --pretty="" --name-only HEAD)
+          # Get changed files - compare HEAD with its parent
+          CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || git diff --name-only HEAD^ HEAD 2>/dev/null || git show --name-only --pretty="" HEAD)
 
           echo "Changed files in this commit:"
           echo "$CHANGED_FILES"
           echo ""
+
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "⚠️  Warning: No files detected, this shouldn't happen"
+          fi
 
           # Check DSP agent
           if echo "$CHANGED_FILES" | grep -qE '^(agents/dsp/|iac/stack\.py)'; then

@@ -74,35 +74,38 @@ jobs:
         run: |
           # Check only files changed in the latest commit (not entire PR)
           echo "📝 Detecting changes in latest commit..."
-          echo "Commit SHA: ${{ github.sha }}"
+
+          # Use the actual PR head commit, not the merge commit
+          COMMIT_SHA="${{ github.event.pull_request.head.sha }}"
+          echo "PR head commit: $COMMIT_SHA"
+          echo ""
 
           # Debug git state
-          echo ""
-          echo "Git log (last 2 commits):"
-          git log --oneline -2
-          echo ""
-
-          # Get parent commit
-          PARENT_SHA=$(git rev-parse ${{ github.sha }}^)
-          echo "Parent SHA: $PARENT_SHA"
+          echo "Git log (last 3 commits on PR branch):"
+          git log --oneline -3 $COMMIT_SHA
           echo ""
 
-          # Compare this commit with its parent
-          CHANGED_FILES=$(git diff --name-only $PARENT_SHA ${{ github.sha }})
+          # Get parent of the actual commit
+          PARENT_SHA=$(git rev-parse ${COMMIT_SHA}^)
+          echo "Parent commit: $PARENT_SHA"
+          echo ""
+
+          # Compare actual commit with its parent (not merge commit)
+          CHANGED_FILES=$(git diff --name-only $PARENT_SHA $COMMIT_SHA)
 
           if [ -z "$CHANGED_FILES" ]; then
             echo "❌ ERROR: No files detected!"
-            echo "Trying git show as fallback..."
-            CHANGED_FILES=$(git diff-tree --no-commit-id --name-only -r ${{ github.sha }})
+            echo "Trying fallback..."
+            CHANGED_FILES=$(git diff-tree --no-commit-id --name-only -r $COMMIT_SHA)
           fi
 
           if [ -z "$CHANGED_FILES" ]; then
             echo "❌ Both methods failed!"
-            git log -1 --stat ${{ github.sha }}
+            git log -1 --stat $COMMIT_SHA
             exit 1
           fi
 
-          echo "✅ Changed files:"
+          echo "✅ Changed files in latest commit:"
           echo "$CHANGED_FILES"
           echo ""
 

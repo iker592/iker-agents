@@ -7,7 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { ChatInterface } from "@/components/agents/ChatInterface"
 import { ThoughtLog } from "@/components/agents/ThoughtLog"
 import { useAgents } from "@/hooks/useAgents"
-import { invokeAgent, generateSessionId } from "@/services/api"
+import { invokeAgent, generateSessionId, saveSessions } from "@/services/api"
 import { cn } from "@/lib/utils"
 import type { AgentMessage } from "@/types/agent"
 
@@ -36,6 +36,7 @@ export function Chat() {
   // Store messages and sessions per agent
   const [agentMessages, setAgentMessages] = useState<Record<string, AgentMessage[]>>({})
   const [agentSessions, setAgentSessions] = useState<Record<string, string>>({})
+  const [sessionMetadata, setSessionMetadata] = useState<Record<string, { agentId: string; startedAt: Date }>>({})
 
   // Current agent's messages and session
   const messages = agentMessages[selectedAgentId] || []
@@ -52,22 +53,55 @@ export function Chat() {
   // Initialize session for agent if it doesn't exist
   useEffect(() => {
     if (selectedAgentId && !agentSessions[selectedAgentId]) {
+      const newSessionId = generateSessionId()
       setAgentSessions(prev => ({
         ...prev,
-        [selectedAgentId]: generateSessionId()
+        [selectedAgentId]: newSessionId
+      }))
+      setSessionMetadata(prev => ({
+        ...prev,
+        [newSessionId]: {
+          agentId: selectedAgentId,
+          startedAt: new Date()
+        }
       }))
     }
   }, [selectedAgentId, agentSessions])
 
+  // Save sessions to localStorage whenever they change
+  useEffect(() => {
+    if (Object.keys(agentSessions).length > 0) {
+      const sessionsToSave = Object.fromEntries(
+        Object.entries(agentSessions).map(([agentId, sessionId]) => [
+          sessionId,
+          {
+            agentId,
+            messageCount: agentMessages[agentId]?.length || 0,
+            startedAt: sessionMetadata[sessionId]?.startedAt || new Date()
+          }
+        ])
+      )
+      saveSessions(sessionsToSave)
+    }
+  }, [agentSessions, agentMessages, sessionMetadata])
+
   // Clear chat - creates new session and clears messages
   const handleClearChat = () => {
+    const newSessionId = generateSessionId()
     setAgentMessages(prev => ({
       ...prev,
       [selectedAgentId]: []
     }))
     setAgentSessions(prev => ({
       ...prev,
-      [selectedAgentId]: generateSessionId()
+      [selectedAgentId]: newSessionId
+    }))
+    setSessionMetadata(prev => ({
+      ...prev,
+      [newSessionId]: {
+        agentId: selectedAgentId,
+        startedAt: new Date()
+      }
     }))
   }
 

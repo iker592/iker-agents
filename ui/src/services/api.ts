@@ -64,3 +64,41 @@ export function generateSessionId(): string {
   // Generate crypto-random UUID (32 hex chars) with 'session-' prefix = 40 chars total
   return `session-${crypto.randomUUID().replace(/-/g, '')}`;
 }
+
+/**
+ * Session storage management
+ */
+const SESSIONS_STORAGE_KEY = 'agent-sessions';
+
+export interface StoredSession {
+  id: string;
+  agentId: string;
+  startedAt: string;
+  lastActivity: string;
+  messageCount: number;
+  status: 'active' | 'completed' | 'error';
+}
+
+export function saveSessions(sessions: Record<string, { agentId: string; messageCount: number; startedAt: Date }>): void {
+  const storedSessions: StoredSession[] = Object.entries(sessions).map(([sessionId, data]) => ({
+    id: sessionId,
+    agentId: data.agentId,
+    startedAt: data.startedAt.toISOString(),
+    lastActivity: new Date().toISOString(),
+    messageCount: data.messageCount,
+    status: 'active' as const,
+  }));
+
+  localStorage.setItem(SESSIONS_STORAGE_KEY, JSON.stringify(storedSessions));
+}
+
+export function loadSessions(): StoredSession[] {
+  const stored = localStorage.getItem(SESSIONS_STORAGE_KEY);
+  if (!stored) return [];
+
+  try {
+    return JSON.parse(stored);
+  } catch {
+    return [];
+  }
+}

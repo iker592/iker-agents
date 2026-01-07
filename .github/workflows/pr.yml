@@ -77,21 +77,25 @@ jobs:
           echo "Current commit: ${{ github.sha }}"
           echo ""
 
-          # Use git diff-tree which is reliable for single commits
-          CHANGED_FILES=$(git diff-tree --no-commit-id --name-only -r ${{ github.sha }})
-
-          echo "Changed files in this commit:"
-          echo "$CHANGED_FILES"
-          echo ""
+          # Use git diff-tree with HEAD - most reliable in GHA
+          CHANGED_FILES=$(git diff-tree --no-commit-id --name-only -r HEAD)
 
           if [ -z "$CHANGED_FILES" ]; then
-            echo "⚠️  Warning: No files detected, this shouldn't happen"
-            echo "Trying alternative method..."
-            # Fallback: compare with parent commit
-            CHANGED_FILES=$(git log -1 --name-only --pretty=format:"" ${{ github.sha }})
-            echo "Fallback result:"
-            echo "$CHANGED_FILES"
+            echo "⚠️  Trying fallback method..."
+            # Fallback: use git show
+            CHANGED_FILES=$(git show --name-only --pretty=format: HEAD | grep -v '^$')
           fi
+
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "❌ ERROR: No files detected in commit!"
+            echo "Git log:"
+            git log -1 --stat
+            exit 1
+          fi
+
+          echo "✅ Changed files in this commit:"
+          echo "$CHANGED_FILES"
+          echo ""
 
           # Check DSP agent
           if echo "$CHANGED_FILES" | grep -qE '^(agents/dsp/|iac/stack\.py)'; then

@@ -77,8 +77,8 @@ jobs:
           echo "Current commit: ${{ github.sha }}"
           echo ""
 
-          # Get changed files - compare HEAD with its parent
-          CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || git diff --name-only HEAD^ HEAD 2>/dev/null || git show --name-only --pretty="" HEAD)
+          # Use git diff-tree which is reliable for single commits
+          CHANGED_FILES=$(git diff-tree --no-commit-id --name-only -r ${{ github.sha }})
 
           echo "Changed files in this commit:"
           echo "$CHANGED_FILES"
@@ -86,6 +86,11 @@ jobs:
 
           if [ -z "$CHANGED_FILES" ]; then
             echo "⚠️  Warning: No files detected, this shouldn't happen"
+            echo "Trying alternative method..."
+            # Fallback: compare with parent commit
+            CHANGED_FILES=$(git log -1 --name-only --pretty=format:"" ${{ github.sha }})
+            echo "Fallback result:"
+            echo "$CHANGED_FILES"
           fi
 
           # Check DSP agent

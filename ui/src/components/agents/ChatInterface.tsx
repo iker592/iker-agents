@@ -10,6 +10,7 @@ import type { Agent, AgentMessage } from "@/types/agent"
 interface ChatInterfaceProps {
   agent: Agent
   messages: AgentMessage[]
+  sessionId?: string
   onSendMessage?: (content: string) => void
   onClearChat?: () => void
 }
@@ -21,6 +22,7 @@ function formatTime(date: Date): string {
 export function ChatInterface({
   agent,
   messages,
+  sessionId,
   onSendMessage,
   onClearChat,
 }: ChatInterfaceProps) {
@@ -167,9 +169,16 @@ export function ChatInterface({
             <Send className="h-4 w-4" />
           </Button>
         </form>
-        <p className="mt-2 text-xs text-muted-foreground text-center">
-          Press Enter to send, Shift+Enter for new line
-        </p>
+        <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
+          <span className="text-center flex-1">
+            Press Enter to send, Shift+Enter for new line
+          </span>
+          {sessionId && (
+            <span className="font-mono text-[10px] opacity-50" title={`Session: ${sessionId}`}>
+              {sessionId.substring(0, 12)}...
+            </span>
+          )}
+        </div>
       </div>
     </div>
   )

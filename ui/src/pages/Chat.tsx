@@ -266,6 +266,7 @@ export function Chat() {
           <ChatInterface
             agent={selectedAgent}
             messages={messages}
+            sessionId={sessionId}
             onSendMessage={handleSendMessage}
             onClearChat={handleClearChat}
           />

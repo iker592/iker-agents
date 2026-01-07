@@ -131,7 +131,7 @@ export function Sessions() {
         <Tabs
           value={statusFilter}
           onValueChange={(v) =>
-            setStatusFilter(v as AgentSession["status"] | "all")
+            setStatusFilter(v as StoredSession["status"] | "all")
           }
         >
           <TabsList>

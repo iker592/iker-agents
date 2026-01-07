@@ -74,26 +74,35 @@ jobs:
         run: |
           # Check only files changed in the latest commit (not entire PR)
           echo "📝 Detecting changes in latest commit..."
-          echo "Current commit: ${{ github.sha }}"
+          echo "Commit SHA: ${{ github.sha }}"
+
+          # Debug git state
+          echo ""
+          echo "Git log (last 2 commits):"
+          git log --oneline -2
           echo ""
 
-          # Use git diff-tree with HEAD - most reliable in GHA
-          CHANGED_FILES=$(git diff-tree --no-commit-id --name-only -r HEAD)
+          # Get parent commit
+          PARENT_SHA=$(git rev-parse ${{ github.sha }}^)
+          echo "Parent SHA: $PARENT_SHA"
+          echo ""
+
+          # Compare this commit with its parent
+          CHANGED_FILES=$(git diff --name-only $PARENT_SHA ${{ github.sha }})
 
           if [ -z "$CHANGED_FILES" ]; then
-            echo "⚠️  Trying fallback method..."
-            # Fallback: use git show
-            CHANGED_FILES=$(git show --name-only --pretty=format: HEAD | grep -v '^$')
+            echo "❌ ERROR: No files detected!"
+            echo "Trying git show as fallback..."
+            CHANGED_FILES=$(git diff-tree --no-commit-id --name-only -r ${{ github.sha }})
           fi
 
           if [ -z "$CHANGED_FILES" ]; then
-            echo "❌ ERROR: No files detected in commit!"
-            echo "Git log:"
-            git log -1 --stat
+            echo "❌ Both methods failed!"
+            git log -1 --stat ${{ github.sha }}
             exit 1
           fi
 
-          echo "✅ Changed files in this commit:"
+          echo "✅ Changed files:"
           echo "$CHANGED_FILES"
           echo ""
 

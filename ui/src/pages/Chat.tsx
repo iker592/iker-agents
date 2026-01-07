@@ -32,6 +32,7 @@ export function Chat() {
   const [showThoughts, setShowThoughts] = useState(true)
   const [isProcessing, setIsProcessing] = useState(false)
 
+
   // Store messages and sessions per agent
   const [agentMessages, setAgentMessages] = useState<Record<string, AgentMessage[]>>({})
   const [agentSessions, setAgentSessions] = useState<Record<string, string>>({})

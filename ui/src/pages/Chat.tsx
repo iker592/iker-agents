@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo } from "react"
 import { useSearchParams } from "react-router-dom"
-import { Bot, Plus } from "lucide-react"
+import { Bot, Plus, Menu } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { ChatInterface } from "@/components/agents/ChatInterface"
 import { useAgents } from "@/hooks/useAgents"
 import { invokeAgent, generateSessionId, saveSession, loadSessionMessages, saveMessages, getAgentSessions, type StoredMessage, type StoredSession } from "@/services/api"
@@ -31,6 +32,7 @@ export function Chat() {
   const [selectedAgentId, setSelectedAgentId] = useState<string>("")
   const [currentSessionId, setCurrentSessionId] = useState<string>("")
   const [isProcessing, setIsProcessing] = useState(false)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   // Store messages by sessionId
   const [sessionMessages, setSessionMessages] = useState<Record<string, AgentMessage[]>>({})
@@ -249,48 +251,54 @@ export function Chat() {
     )
   }
 
+  // Agent list component (reused in sidebar and mobile sheet)
+  const AgentList = () => (
+    <div className="space-y-1 p-2">
+      {uiAgents.map((agent) => (
+        <button
+          key={agent.id}
+          onClick={() => {
+            setSelectedAgentId(agent.id)
+            setSearchParams({ agent: agent.id })
+            setMobileMenuOpen(false) // Close mobile menu on selection
+          }}
+          className={cn(
+            "w-full rounded-lg p-3 text-left transition-colors",
+            agent.id === selectedAgentId
+              ? "bg-accent"
+              : "hover:bg-accent/50"
+          )}
+        >
+          <div className="flex items-center gap-2">
+            <div
+              className={cn(
+                "flex h-8 w-8 items-center justify-center rounded-md",
+                typeColors[agent.type]
+              )}
+            >
+              <Bot className="h-4 w-4" />
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <p className="truncate font-medium text-sm">
+                {agent.name}
+              </p>
+            </div>
+          </div>
+        </button>
+      ))}
+    </div>
+  )
+
   return (
     <div className="flex h-[calc(100vh-8rem)] gap-6">
-      {/* Agent selector sidebar */}
-      <Card className="w-64 shrink-0">
+      {/* Desktop Agent selector sidebar */}
+      <Card className="hidden md:block w-64 shrink-0">
         <CardHeader className="border-b py-3">
           <CardTitle className="text-sm">Agents</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <ScrollArea className="h-[calc(100vh-12rem)]">
-            <div className="space-y-1 p-2">
-              {uiAgents.map((agent) => (
-                <button
-                  key={agent.id}
-                  onClick={() => {
-                    setSelectedAgentId(agent.id)
-                    setSearchParams({ agent: agent.id })
-                  }}
-                  className={cn(
-                    "w-full rounded-lg p-3 text-left transition-colors",
-                    agent.id === selectedAgentId
-                      ? "bg-accent"
-                      : "hover:bg-accent/50"
-                  )}
-                >
-                  <div className="flex items-center gap-2">
-                    <div
-                      className={cn(
-                        "flex h-8 w-8 items-center justify-center rounded-md",
-                        typeColors[agent.type]
-                      )}
-                    >
-                      <Bot className="h-4 w-4" />
-                    </div>
-                    <div className="flex-1 overflow-hidden">
-                      <p className="truncate font-medium text-sm">
-                        {agent.name}
-                      </p>
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
+            <AgentList />
           </ScrollArea>
         </CardContent>
       </Card>
@@ -299,6 +307,23 @@ export function Chat() {
       <Card className="flex-1 flex flex-col min-w-0">
         <CardHeader className="border-b py-3 flex-row items-center justify-between space-y-0">
           <div className="flex items-center gap-3">
+            {/* Mobile menu button */}
+            <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+              <SheetTrigger asChild>
+                <Button variant="ghost" size="icon" className="md:hidden">
+                  <Menu className="h-5 w-5" />
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="left" className="w-64 p-0">
+                <SheetHeader className="border-b p-4">
+                  <SheetTitle>Agents</SheetTitle>
+                </SheetHeader>
+                <ScrollArea className="h-[calc(100vh-5rem)]">
+                  <AgentList />
+                </ScrollArea>
+              </SheetContent>
+            </Sheet>
+
             <div
               className={cn(
                 "flex h-10 w-10 items-center justify-center rounded-lg",
@@ -307,9 +332,9 @@ export function Chat() {
             >
               <Bot className="h-5 w-5" />
             </div>
-            <div>
-              <CardTitle className="text-base">{selectedAgent.name}</CardTitle>
-              <p className="text-xs text-muted-foreground">
+            <div className="flex-1 min-w-0">
+              <CardTitle className="text-base truncate">{selectedAgent.name}</CardTitle>
+              <p className="text-xs text-muted-foreground truncate">
                 {selectedAgent.model}
               </p>
             </div>
@@ -322,9 +347,9 @@ export function Chat() {
               className="gap-2"
             >
               <Plus className="h-4 w-4" />
-              New Chat
+              <span className="hidden sm:inline">New Chat</span>
             </Button>
-            <Badge variant={statusColors[selectedAgent.status]}>
+            <Badge variant={statusColors[selectedAgent.status]} className="hidden sm:inline-flex">
               {selectedAgent.status}
             </Badge>
           </div>

@@ -3,7 +3,7 @@ import { Plus, Search, Filter } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { AgentCard } from "@/components/agents/AgentCard"
-import { mockAgents } from "@/data/agents"
+import { useAgents } from "@/hooks/useAgents"
 import {
   Dialog,
   DialogContent,
@@ -19,8 +19,9 @@ import type { AgentStatus } from "@/types/agent"
 export function Agents() {
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState<AgentStatus | "all">("all")
+  const { agents, loading, error } = useAgents()
 
-  const filteredAgents = mockAgents.filter((agent) => {
+  const filteredAgents = agents.filter((agent) => {
     const matchesSearch =
       agent.name.toLowerCase().includes(search.toLowerCase()) ||
       agent.description.toLowerCase().includes(search.toLowerCase())
@@ -107,7 +108,16 @@ export function Agents() {
         </Button>
       </div>
 
-      {filteredAgents.length === 0 ? (
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <p className="text-muted-foreground">Loading agents...</p>
+        </div>
+      ) : error ? (
+        <div className="flex flex-col items-center justify-center py-12 text-center">
+          <p className="text-lg font-medium text-destructive">Error loading agents</p>
+          <p className="text-muted-foreground">{error}</p>
+        </div>
+      ) : filteredAgents.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 text-center">
           <p className="text-lg font-medium">No agents found</p>
           <p className="text-muted-foreground">

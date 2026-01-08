@@ -120,7 +120,7 @@ export function Sessions() {
         </Card>
       </div>
 
-      <div className="flex items-center gap-4">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -130,22 +130,25 @@ export function Sessions() {
             className="pl-9"
           />
         </div>
-        <Tabs
-          value={statusFilter}
-          onValueChange={(v) =>
-            setStatusFilter(v as StoredSession["status"] | "all")
-          }
-        >
-          <TabsList>
-            <TabsTrigger value="all">All</TabsTrigger>
-            <TabsTrigger value="active">Active</TabsTrigger>
-            <TabsTrigger value="completed">Completed</TabsTrigger>
-            <TabsTrigger value="error">Error</TabsTrigger>
-          </TabsList>
-        </Tabs>
-        <Button variant="outline" size="icon">
-          <Filter className="h-4 w-4" />
-        </Button>
+        <div className="flex items-center gap-2">
+          <Tabs
+            value={statusFilter}
+            onValueChange={(v) =>
+              setStatusFilter(v as StoredSession["status"] | "all")
+            }
+            className="flex-1 sm:flex-none"
+          >
+            <TabsList className="grid grid-cols-4 w-full">
+              <TabsTrigger value="all">All</TabsTrigger>
+              <TabsTrigger value="active">Active</TabsTrigger>
+              <TabsTrigger value="completed">Done</TabsTrigger>
+              <TabsTrigger value="error">Error</TabsTrigger>
+            </TabsList>
+          </Tabs>
+          <Button variant="outline" size="icon" className="hidden sm:flex">
+            <Filter className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
 
       <Card>
@@ -171,12 +174,12 @@ export function Sessions() {
                     <div
                       key={session.id}
                       onClick={() => navigate(`/chat?agent=${session.agentId}&session=${session.id}`)}
-                      className="flex items-center justify-between rounded-lg border p-4 transition-colors hover:bg-accent/50 cursor-pointer"
+                      className="flex flex-col sm:flex-row items-start sm:items-center justify-between rounded-lg border p-4 transition-colors hover:bg-accent/50 cursor-pointer gap-3"
                     >
-                      <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-4 flex-1 min-w-0">
                         <div
                           className={cn(
-                            "flex h-10 w-10 items-center justify-center rounded-lg",
+                            "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg",
                             agentType === "research" && "bg-blue-500/10 text-blue-500",
                             agentType === "coding" && "bg-purple-500/10 text-purple-500",
                             agentType === "analyst" && "bg-green-500/10 text-green-500"
@@ -184,17 +187,17 @@ export function Sessions() {
                         >
                           <Bot className="h-5 w-5" />
                         </div>
-                        <div>
+                        <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
-                            <p className="font-medium">{agent?.name || session.agentId}</p>
-                            <span className="text-xs text-muted-foreground font-mono">
+                            <p className="font-medium truncate">{agent?.name || session.agentId}</p>
+                            <span className="text-xs text-muted-foreground font-mono hidden md:inline">
                               {session.id.substring(0, 20)}...
                             </span>
                           </div>
-                          <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                          <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
                             <span className="flex items-center gap-1">
                               <MessageSquare className="h-3 w-3" />
-                              {session.messageCount} messages
+                              {session.messageCount} msg{session.messageCount !== 1 ? 's' : ''}
                             </span>
                             <span className="flex items-center gap-1">
                               <Clock className="h-3 w-3" />
@@ -203,7 +206,7 @@ export function Sessions() {
                           </div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-4 self-end sm:self-auto">
                         <div className="text-right">
                           <Badge
                             variant={
@@ -216,7 +219,7 @@ export function Sessions() {
                           >
                             {session.status}
                           </Badge>
-                          <p className="mt-1 text-xs text-muted-foreground">
+                          <p className="mt-1 text-xs text-muted-foreground whitespace-nowrap">
                             {formatTimeAgo(startedAt)}
                           </p>
                         </div>

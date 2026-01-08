@@ -65,6 +65,15 @@ export function Sessions() {
     return matchesSearch && matchesStatus
   })
 
+  // Group sessions by agent
+  const sessionsByAgent = filteredSessions.reduce((acc, session) => {
+    if (!acc[session.agentId]) {
+      acc[session.agentId] = []
+    }
+    acc[session.agentId].push(session)
+    return acc
+  }, {} as Record<string, StoredSession[]>)
+
   const activeSessions = sessions.filter((s) => s.status === "active")
   const completedSessions = sessions.filter((s) => s.status === "completed")
   const errorSessions = sessions.filter((s) => s.status === "error")
@@ -153,82 +162,98 @@ export function Sessions() {
 
       <Card>
         <CardHeader>
-          <CardTitle>All Sessions</CardTitle>
+          <CardTitle>Sessions by Agent</CardTitle>
         </CardHeader>
         <CardContent>
           <ScrollArea className="h-[500px]">
-            <div className="space-y-3">
-              {filteredSessions.length === 0 ? (
-                <p className="text-center text-muted-foreground py-8">
-                  No sessions yet. Start chatting with an agent to create a session.
-                </p>
-              ) : (
-                filteredSessions.map((session) => {
-                  const agent = agents.find((a) => a.id === session.agentId)
+            {filteredSessions.length === 0 ? (
+              <p className="text-center text-muted-foreground py-8">
+                No sessions yet. Start chatting with an agent to create a session.
+              </p>
+            ) : (
+              <div className="space-y-6">
+                {Object.entries(sessionsByAgent).map(([agentId, agentSessions]) => {
+                  const agent = agents.find((a) => a.id === agentId)
                   const agentType = agent?.id.includes('research') ? 'research' :
                                    agent?.id.includes('coding') ? 'coding' : 'analyst'
-                  const startedAt = new Date(session.startedAt)
-                  const lastActivity = new Date(session.lastActivity)
 
                   return (
-                    <div
-                      key={session.id}
-                      onClick={() => navigate(`/chat?agent=${session.agentId}&session=${session.id}`)}
-                      className="flex flex-col sm:flex-row items-start sm:items-center justify-between rounded-lg border p-4 transition-colors hover:bg-accent/50 cursor-pointer gap-3"
-                    >
-                      <div className="flex items-center gap-4 flex-1 min-w-0">
+                    <div key={agentId} className="space-y-3">
+                      {/* Agent header */}
+                      <div className="flex items-center gap-3 px-2">
                         <div
                           className={cn(
-                            "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg",
+                            "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
                             agentType === "research" && "bg-blue-500/10 text-blue-500",
                             agentType === "coding" && "bg-purple-500/10 text-purple-500",
                             agentType === "analyst" && "bg-green-500/10 text-green-500"
                           )}
                         >
-                          <Bot className="h-5 w-5" />
+                          <Bot className="h-4 w-4" />
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <p className="font-medium truncate">{agent?.name || session.agentId}</p>
-                            <span className="text-xs text-muted-foreground font-mono hidden md:inline">
-                              {session.id.substring(0, 20)}...
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
-                            <span className="flex items-center gap-1">
-                              <MessageSquare className="h-3 w-3" />
-                              {session.messageCount} msg{session.messageCount !== 1 ? 's' : ''}
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <Clock className="h-3 w-3" />
-                              {formatDuration(startedAt, lastActivity)}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-4 self-end sm:self-auto">
-                        <div className="text-right">
-                          <Badge
-                            variant={
-                              session.status === "active"
-                                ? "success"
-                                : session.status === "error"
-                                ? "destructive"
-                                : "secondary"
-                            }
-                          >
-                            {session.status}
-                          </Badge>
-                          <p className="mt-1 text-xs text-muted-foreground whitespace-nowrap">
-                            {formatTimeAgo(startedAt)}
+                        <div className="flex-1">
+                          <p className="font-semibold text-sm">{agent?.name || agentId}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {agentSessions.length} session{agentSessions.length !== 1 ? 's' : ''}
                           </p>
                         </div>
                       </div>
+
+                      {/* Sessions for this agent */}
+                      <div className="space-y-2">
+                        {agentSessions.map((session) => {
+                          const startedAt = new Date(session.startedAt)
+                          const lastActivity = new Date(session.lastActivity)
+
+                          return (
+                            <div
+                              key={session.id}
+                              onClick={() => navigate(`/chat?agent=${session.agentId}&session=${session.id}`)}
+                              className="flex flex-col sm:flex-row items-start sm:items-center justify-between rounded-lg border p-3 transition-colors hover:bg-accent/50 cursor-pointer gap-2"
+                            >
+                              <div className="flex items-center gap-3 flex-1 min-w-0">
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs text-muted-foreground font-mono hidden md:inline">
+                                      {session.id.substring(0, 12)}...
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-3 text-sm text-muted-foreground flex-wrap">
+                                    <span className="flex items-center gap-1">
+                                      <MessageSquare className="h-3 w-3" />
+                                      {session.messageCount}
+                                    </span>
+                                    <span className="flex items-center gap-1">
+                                      <Clock className="h-3 w-3" />
+                                      {formatDuration(startedAt, lastActivity)}
+                                    </span>
+                                    <span className="text-xs">
+                                      {formatTimeAgo(startedAt)}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                              <Badge
+                                variant={
+                                  session.status === "active"
+                                    ? "success"
+                                    : session.status === "error"
+                                    ? "destructive"
+                                    : "secondary"
+                                }
+                                className="self-end sm:self-auto"
+                              >
+                                {session.status}
+                              </Badge>
+                            </div>
+                          )
+                        })}
+                      </div>
                     </div>
                   )
-                })
-              )}
-            </div>
+                })}
+              </div>
+            )}
           </ScrollArea>
         </CardContent>
       </Card>

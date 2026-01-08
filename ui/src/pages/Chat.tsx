@@ -1,13 +1,14 @@
 import { useState, useEffect, useMemo } from "react"
-import { useSearchParams } from "react-router-dom"
-import { Bot, ChevronDown, Brain } from "lucide-react"
+import { useSearchParams, useNavigate } from "react-router-dom"
+import { Bot, ChevronDown, Brain, Plus } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { ChatInterface } from "@/components/agents/ChatInterface"
 import { ThoughtLog } from "@/components/agents/ThoughtLog"
 import { useAgents } from "@/hooks/useAgents"
-import { invokeAgent, generateSessionId, saveSessions, loadAllMessages, saveMessages, loadAgentSession, type StoredMessage } from "@/services/api"
+import { invokeAgent, generateSessionId, saveSession, loadSessionMessages, saveMessages, getAgentSessions, type StoredMessage, type StoredSession } from "@/services/api"
 import { cn } from "@/lib/utils"
 import type { AgentMessage } from "@/types/agent"
 
@@ -26,51 +27,66 @@ const typeColors = {
 }
 
 export function Chat() {
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const navigate = useNavigate()
   const { agents, loading, error } = useAgents()
   const [selectedAgentId, setSelectedAgentId] = useState<string>("")
+  const [currentSessionId, setCurrentSessionId] = useState<string>("")
   const [showThoughts, setShowThoughts] = useState(true)
   const [isProcessing, setIsProcessing] = useState(false)
 
+  // Store messages by sessionId
+  const [sessionMessages, setSessionMessages] = useState<Record<string, AgentMessage[]>>({})
 
-  // Store messages and sessions per agent
-  const [agentMessages, setAgentMessages] = useState<Record<string, AgentMessage[]>>({})
-  const [agentSessions, setAgentSessions] = useState<Record<string, string>>({})
-  const [sessionMetadata, setSessionMetadata] = useState<Record<string, { agentId: string; startedAt: Date }>>({})
+  // Current session's messages
+  const messages = sessionMessages[currentSessionId] || []
 
-  // Current agent's messages and session
-  const messages = agentMessages[selectedAgentId] || []
-  const sessionId = agentSessions[selectedAgentId] || ""
-
-  // Load messages and sessions from localStorage on mount
+  // Load or create session when agent or session param changes
   useEffect(() => {
-    const storedMessages = loadAllMessages()
-    const loadedMessages: Record<string, AgentMessage[]> = {}
-    const loadedSessions: Record<string, string> = {}
-    const loadedMetadata: Record<string, { agentId: string; startedAt: Date }> = {}
+    if (!selectedAgentId) return
 
-    // Convert stored messages to AgentMessage format
-    for (const [agentId, msgs] of Object.entries(storedMessages)) {
-      loadedMessages[agentId] = msgs.map(msg => ({
+    const sessionParam = searchParams.get("session")
+
+    if (sessionParam) {
+      // Load specific session from URL
+      const storedMessages = loadSessionMessages(sessionParam)
+      const loadedMessages: AgentMessage[] = storedMessages.map(msg => ({
         ...msg,
         timestamp: new Date(msg.timestamp)
       }))
 
-      // Load session for this agent
-      const session = loadAgentSession(agentId)
-      if (session) {
-        loadedSessions[agentId] = session.sessionId
-        loadedMetadata[session.sessionId] = {
-          agentId,
-          startedAt: session.startedAt
-        }
+      setCurrentSessionId(sessionParam)
+      setSessionMessages(prev => ({
+        ...prev,
+        [sessionParam]: loadedMessages
+      }))
+    } else {
+      // Get or create latest session for this agent
+      const agentSessions = getAgentSessions(selectedAgentId)
+
+      if (agentSessions.length > 0 && agentSessions[0].status === 'active') {
+        // Load most recent active session
+        const latestSession = agentSessions[0]
+        const storedMessages = loadSessionMessages(latestSession.id)
+        const loadedMessages: AgentMessage[] = storedMessages.map(msg => ({
+          ...msg,
+          timestamp: new Date(msg.timestamp)
+        }))
+
+        setCurrentSessionId(latestSession.id)
+        setSessionMessages(prev => ({
+          ...prev,
+          [latestSession.id]: loadedMessages
+        }))
+
+        // Update URL to include session
+        setSearchParams({ agent: selectedAgentId, session: latestSession.id })
+      } else {
+        // Create new session
+        handleNewChat()
       }
     }
-
-    setAgentMessages(loadedMessages)
-    setAgentSessions(loadedSessions)
-    setSessionMetadata(loadedMetadata)
-  }, [])
+  }, [selectedAgentId, searchParams.get("session")])
 
   // Set initial agent from URL or first agent
   useEffect(() => {
@@ -80,84 +96,56 @@ export function Chat() {
     }
   }, [agents, selectedAgentId, searchParams])
 
-  // Initialize session for agent if it doesn't exist
-  useEffect(() => {
-    if (selectedAgentId && !agentSessions[selectedAgentId]) {
-      const newSessionId = generateSessionId()
-      setAgentSessions(prev => ({
-        ...prev,
-        [selectedAgentId]: newSessionId
-      }))
-      setSessionMetadata(prev => ({
-        ...prev,
-        [newSessionId]: {
-          agentId: selectedAgentId,
-          startedAt: new Date()
-        }
-      }))
-    }
-  }, [selectedAgentId, agentSessions])
-
   // Save messages to localStorage whenever they change
   useEffect(() => {
-    for (const [agentId, msgs] of Object.entries(agentMessages)) {
-      if (msgs.length > 0) {
-        const storedMessages: StoredMessage[] = msgs.map(msg => ({
-          id: msg.id,
-          role: msg.role,
-          content: msg.content,
-          timestamp: msg.timestamp.toISOString(),
-          toolName: msg.toolName,
-          toolResult: msg.toolResult
-        }))
-        saveMessages(agentId, storedMessages)
+    if (currentSessionId && messages.length > 0) {
+      const storedMessages: StoredMessage[] = messages.map(msg => ({
+        id: msg.id,
+        role: msg.role,
+        content: msg.content,
+        timestamp: msg.timestamp.toISOString(),
+        toolName: msg.toolName,
+        toolResult: msg.toolResult
+      }))
+      saveMessages(currentSessionId, storedMessages)
+
+      // Update session metadata
+      const session: StoredSession = {
+        id: currentSessionId,
+        agentId: selectedAgentId,
+        startedAt: messages[0]?.timestamp.toISOString() || new Date().toISOString(),
+        lastActivity: new Date().toISOString(),
+        messageCount: messages.length,
+        status: 'active'
       }
+      saveSession(session)
     }
-  }, [agentMessages])
+  }, [messages, currentSessionId, selectedAgentId])
 
-  // Save sessions to localStorage whenever they change
-  useEffect(() => {
-    if (Object.keys(agentSessions).length > 0) {
-      const sessionsToSave = Object.fromEntries(
-        Object.entries(agentSessions).map(([agentId, sessionId]) => [
-          sessionId,
-          {
-            agentId,
-            messageCount: agentMessages[agentId]?.length || 0,
-            startedAt: sessionMetadata[sessionId]?.startedAt || new Date()
-          }
-        ])
-      )
-      saveSessions(sessionsToSave)
-    }
-  }, [agentSessions, agentMessages, sessionMetadata])
-
-  // Clear chat - creates new session and clears messages
-  const handleClearChat = () => {
+  // Create new chat session
+  const handleNewChat = () => {
     const newSessionId = generateSessionId()
 
-    // Clear messages in state (will trigger save to localStorage)
-    setAgentMessages(prev => ({
+    // Save empty session
+    const newSession: StoredSession = {
+      id: newSessionId,
+      agentId: selectedAgentId,
+      startedAt: new Date().toISOString(),
+      lastActivity: new Date().toISOString(),
+      messageCount: 0,
+      status: 'active'
+    }
+    saveSession(newSession)
+
+    // Update state
+    setCurrentSessionId(newSessionId)
+    setSessionMessages(prev => ({
       ...prev,
-      [selectedAgentId]: []
+      [newSessionId]: []
     }))
 
-    // Create new session
-    setAgentSessions(prev => ({
-      ...prev,
-      [selectedAgentId]: newSessionId
-    }))
-
-    setSessionMetadata(prev => ({
-      ...prev,
-      [newSessionId]: {
-        agentId: selectedAgentId,
-        startedAt: new Date()
-      }
-    }))
-
-    // Clear messages from localStorage
-    saveMessages(selectedAgentId, [])
+    // Update URL
+    setSearchParams({ agent: selectedAgentId, session: newSessionId })
   }
 
   // Map API agents to UI agent format
@@ -186,7 +174,7 @@ export function Chat() {
   const selectedAgent = uiAgents.find((a) => a.id === selectedAgentId)
 
   const handleSendMessage = async (content: string) => {
-    if (!selectedAgentId || isProcessing || !sessionId) return
+    if (!selectedAgentId || isProcessing || !currentSessionId) return
 
     const newMessage: AgentMessage = {
       id: `msg-${Date.now()}`,
@@ -195,45 +183,45 @@ export function Chat() {
       timestamp: new Date(),
     }
 
-    // Add user message to this agent's messages
-    setAgentMessages(prev => ({
+    // Add user message to current session
+    setSessionMessages(prev => ({
       ...prev,
-      [selectedAgentId]: [...(prev[selectedAgentId] || []), newMessage]
+      [currentSessionId]: [...(prev[currentSessionId] || []), newMessage]
     }))
+
     setIsProcessing(true)
 
     try {
+      // Call agent API
       const response = await invokeAgent({
         agent_id: selectedAgentId,
         input: content,
-        session_id: sessionId,
+        session_id: currentSessionId,
       })
 
-      const assistantMessage: AgentMessage = {
-        id: `msg-${Date.now() + 1}`,
+      // Add agent response
+      const agentMessage: AgentMessage = {
+        id: `msg-${Date.now()}-response`,
         role: "assistant",
         content: response.output,
         timestamp: new Date(),
       }
 
-      // Add assistant message to this agent's messages
-      setAgentMessages(prev => ({
+      setSessionMessages(prev => ({
         ...prev,
-        [selectedAgentId]: [...(prev[selectedAgentId] || []), assistantMessage]
+        [currentSessionId]: [...(prev[currentSessionId] || []), agentMessage]
       }))
-    } catch (error) {
-      console.error('Failed to invoke agent:', error)
+    } catch (err) {
       const errorMessage: AgentMessage = {
-        id: `msg-${Date.now() + 1}`,
+        id: `msg-${Date.now()}-error`,
         role: "assistant",
-        content: `Error: ${error instanceof Error ? error.message : 'Failed to get response'}`,
+        content: `Error: ${err instanceof Error ? err.message : 'Failed to get response'}`,
         timestamp: new Date(),
       }
 
-      // Add error message to this agent's messages
-      setAgentMessages(prev => ({
+      setSessionMessages(prev => ({
         ...prev,
-        [selectedAgentId]: [...(prev[selectedAgentId] || []), errorMessage]
+        [currentSessionId]: [...(prev[currentSessionId] || []), errorMessage]
       }))
     } finally {
       setIsProcessing(false)
@@ -265,62 +253,44 @@ export function Chat() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] gap-4">
-      {/* Agents sidebar */}
-      <Card className="w-72 shrink-0">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm">Select Agent</CardTitle>
+    <div className="flex h-[calc(100vh-8rem)] gap-6">
+      {/* Agent selector sidebar */}
+      <Card className="w-64 shrink-0">
+        <CardHeader className="border-b py-3">
+          <CardTitle className="text-sm">Agents</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          <ScrollArea className="h-[calc(100vh-14rem)]">
+          <ScrollArea className="h-[calc(100vh-12rem)]">
             <div className="space-y-1 p-2">
               {uiAgents.map((agent) => (
                 <button
                   key={agent.id}
-                  onClick={() => setSelectedAgentId(agent.id)}
+                  onClick={() => {
+                    setSelectedAgentId(agent.id)
+                    setSearchParams({ agent: agent.id })
+                  }}
                   className={cn(
-                    "flex w-full items-center gap-3 rounded-lg p-3 text-left transition-colors",
-                    selectedAgentId === agent.id
-                      ? "bg-primary text-primary-foreground"
-                      : "hover:bg-accent"
+                    "w-full rounded-lg p-3 text-left transition-colors",
+                    agent.id === selectedAgentId
+                      ? "bg-accent"
+                      : "hover:bg-accent/50"
                   )}
                 >
-                  <div
-                    className={cn(
-                      "flex h-9 w-9 items-center justify-center rounded-lg",
-                      selectedAgentId === agent.id
-                        ? "bg-primary-foreground/20"
-                        : typeColors[agent.type]
-                    )}
-                  >
-                    <Bot className="h-5 w-5" />
-                  </div>
-                  <div className="flex-1 overflow-hidden">
-                    <p className="truncate font-medium">{agent.name}</p>
-                    <p
+                  <div className="flex items-center gap-2">
+                    <div
                       className={cn(
-                        "truncate text-xs",
-                        selectedAgentId === agent.id
-                          ? "text-primary-foreground/70"
-                          : "text-muted-foreground"
+                        "flex h-8 w-8 items-center justify-center rounded-md",
+                        typeColors[agent.type]
                       )}
                     >
-                      {agent.type} agent
-                    </p>
+                      <Bot className="h-4 w-4" />
+                    </div>
+                    <div className="flex-1 overflow-hidden">
+                      <p className="truncate font-medium text-sm">
+                        {agent.name}
+                      </p>
+                    </div>
                   </div>
-                  <Badge
-                    variant={
-                      selectedAgentId === agent.id
-                        ? "outline"
-                        : statusColors[agent.status]
-                    }
-                    className={cn(
-                      selectedAgentId === agent.id &&
-                        "border-primary-foreground/30 text-primary-foreground"
-                    )}
-                  >
-                    {agent.status}
-                  </Badge>
                 </button>
               ))}
             </div>
@@ -329,8 +299,8 @@ export function Chat() {
       </Card>
 
       {/* Chat area */}
-      <Card className="flex-1">
-        <CardHeader className="flex flex-row items-center justify-between border-b py-3">
+      <Card className="flex-1 flex flex-col min-w-0">
+        <CardHeader className="border-b py-3 flex-row items-center justify-between space-y-0">
           <div className="flex items-center gap-3">
             <div
               className={cn(
@@ -341,23 +311,33 @@ export function Chat() {
               <Bot className="h-5 w-5" />
             </div>
             <div>
-              <CardTitle className="text-lg">{selectedAgent.name}</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                {selectedAgent.description}
+              <CardTitle className="text-base">{selectedAgent.name}</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                {selectedAgent.model}
               </p>
             </div>
           </div>
-          <Badge variant={statusColors[selectedAgent.status]}>
-            {selectedAgent.status}
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleNewChat}
+              className="gap-2"
+            >
+              <Plus className="h-4 w-4" />
+              New Chat
+            </Button>
+            <Badge variant={statusColors[selectedAgent.status]}>
+              {selectedAgent.status}
+            </Badge>
+          </div>
         </CardHeader>
         <CardContent className="h-[calc(100%-5rem)] p-0">
           <ChatInterface
             agent={selectedAgent}
             messages={messages}
-            sessionId={sessionId}
+            sessionId={currentSessionId}
             onSendMessage={handleSendMessage}
-            onClearChat={handleClearChat}
           />
         </CardContent>
       </Card>
@@ -369,23 +349,22 @@ export function Chat() {
           onClick={() => setShowThoughts(!showThoughts)}
         >
           <div className="flex items-center justify-between">
-            {showThoughts && (
-              <CardTitle className="flex items-center gap-2 text-sm">
-                <Brain className="h-4 w-4" />
-                Thought Log
-              </CardTitle>
+            {showThoughts ? (
+              <>
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Brain className="h-4 w-4" />
+                  Thought Process
+                </CardTitle>
+                <ChevronDown className="h-4 w-4" />
+              </>
+            ) : (
+              <Brain className="h-4 w-4 mx-auto" />
             )}
-            <ChevronDown
-              className={cn(
-                "h-4 w-4 transition-transform",
-                !showThoughts && "rotate-90"
-              )}
-            />
           </div>
         </CardHeader>
         {showThoughts && (
-          <CardContent className="h-[calc(100%-3.5rem)] p-4">
-            <ThoughtLog entries={[]} />
+          <CardContent className="h-[calc(100vh-12rem)] p-0">
+            <ThoughtLog thoughts={[]} />
           </CardContent>
         )}
       </Card>

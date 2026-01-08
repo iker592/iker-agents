@@ -89,17 +89,17 @@ export interface StoredMessage {
   toolResult?: string;
 }
 
-export function saveSessions(sessions: Record<string, { agentId: string; messageCount: number; startedAt: Date }>): void {
-  const storedSessions: StoredSession[] = Object.entries(sessions).map(([sessionId, data]) => ({
-    id: sessionId,
-    agentId: data.agentId,
-    startedAt: data.startedAt.toISOString(),
-    lastActivity: new Date().toISOString(),
-    messageCount: data.messageCount,
-    status: 'active' as const,
-  }));
+export function saveSession(session: StoredSession): void {
+  const sessions = loadSessions();
+  const existingIndex = sessions.findIndex(s => s.id === session.id);
 
-  localStorage.setItem(SESSIONS_STORAGE_KEY, JSON.stringify(storedSessions));
+  if (existingIndex >= 0) {
+    sessions[existingIndex] = session;
+  } else {
+    sessions.push(session);
+  }
+
+  localStorage.setItem(SESSIONS_STORAGE_KEY, JSON.stringify(sessions));
 }
 
 export function loadSessions(): StoredSession[] {
@@ -113,9 +113,9 @@ export function loadSessions(): StoredSession[] {
   }
 }
 
-export function saveMessages(agentId: string, messages: StoredMessage[]): void {
+export function saveMessages(sessionId: string, messages: StoredMessage[]): void {
   const allMessages = loadAllMessages();
-  allMessages[agentId] = messages;
+  allMessages[sessionId] = messages;
   localStorage.setItem(MESSAGES_STORAGE_KEY, JSON.stringify(allMessages));
 }
 
@@ -130,13 +130,14 @@ export function loadAllMessages(): Record<string, StoredMessage[]> {
   }
 }
 
-export function loadAgentSession(agentId: string): { sessionId: string; startedAt: Date } | null {
-  const sessions = loadSessions();
-  const session = sessions.find(s => s.agentId === agentId && s.status === 'active');
-  if (!session) return null;
+export function loadSessionMessages(sessionId: string): StoredMessage[] {
+  const allMessages = loadAllMessages();
+  return allMessages[sessionId] || [];
+}
 
-  return {
-    sessionId: session.id,
-    startedAt: new Date(session.startedAt)
-  };
+export function getAgentSessions(agentId: string): StoredSession[] {
+  const sessions = loadSessions();
+  return sessions
+    .filter(s => s.agentId === agentId)
+    .sort((a, b) => new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime());
 }

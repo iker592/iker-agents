@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react"
+import { useNavigate } from "react-router-dom"
 import { Search, Filter, Clock, MessageSquare, Bot } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -33,6 +34,7 @@ function formatDuration(start: Date, end?: Date): string {
 }
 
 export function Sessions() {
+  const navigate = useNavigate()
   const { agents } = useAgents()
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState<
@@ -168,7 +170,8 @@ export function Sessions() {
                   return (
                     <div
                       key={session.id}
-                      className="flex items-center justify-between rounded-lg border p-4 transition-colors hover:bg-accent/50"
+                      onClick={() => navigate(`/chat?agent=${session.agentId}&session=${session.id}`)}
+                      className="flex items-center justify-between rounded-lg border p-4 transition-colors hover:bg-accent/50 cursor-pointer"
                     >
                       <div className="flex items-center gap-4">
                         <div
@@ -217,9 +220,6 @@ export function Sessions() {
                             {formatTimeAgo(startedAt)}
                           </p>
                         </div>
-                        <Button variant="ghost" size="sm">
-                          View
-                        </Button>
                       </div>
                     </div>
                   )

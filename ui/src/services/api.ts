@@ -69,6 +69,7 @@ export function generateSessionId(): string {
  * Session storage management
  */
 const SESSIONS_STORAGE_KEY = 'agent-sessions';
+const MESSAGES_STORAGE_KEY = 'agent-messages';
 
 export interface StoredSession {
   id: string;
@@ -77,6 +78,15 @@ export interface StoredSession {
   lastActivity: string;
   messageCount: number;
   status: 'active' | 'completed' | 'error';
+}
+
+export interface StoredMessage {
+  id: string;
+  role: 'user' | 'assistant' | 'system' | 'tool';
+  content: string;
+  timestamp: string;
+  toolName?: string;
+  toolResult?: string;
 }
 
 export function saveSessions(sessions: Record<string, { agentId: string; messageCount: number; startedAt: Date }>): void {
@@ -101,4 +111,32 @@ export function loadSessions(): StoredSession[] {
   } catch {
     return [];
   }
+}
+
+export function saveMessages(agentId: string, messages: StoredMessage[]): void {
+  const allMessages = loadAllMessages();
+  allMessages[agentId] = messages;
+  localStorage.setItem(MESSAGES_STORAGE_KEY, JSON.stringify(allMessages));
+}
+
+export function loadAllMessages(): Record<string, StoredMessage[]> {
+  const stored = localStorage.getItem(MESSAGES_STORAGE_KEY);
+  if (!stored) return {};
+
+  try {
+    return JSON.parse(stored);
+  } catch {
+    return {};
+  }
+}
+
+export function loadAgentSession(agentId: string): { sessionId: string; startedAt: Date } | null {
+  const sessions = loadSessions();
+  const session = sessions.find(s => s.agentId === agentId && s.status === 'active');
+  if (!session) return null;
+
+  return {
+    sessionId: session.id,
+    startedAt: new Date(session.startedAt)
+  };
 }

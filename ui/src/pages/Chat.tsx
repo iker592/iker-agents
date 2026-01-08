@@ -7,7 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { ChatInterface } from "@/components/agents/ChatInterface"
 import { ThoughtLog } from "@/components/agents/ThoughtLog"
 import { useAgents } from "@/hooks/useAgents"
-import { invokeAgent, generateSessionId, saveSessions } from "@/services/api"
+import { invokeAgent, generateSessionId, saveSessions, loadAllMessages, saveMessages, loadAgentSession, type StoredMessage } from "@/services/api"
 import { cn } from "@/lib/utils"
 import type { AgentMessage } from "@/types/agent"
 
@@ -42,6 +42,36 @@ export function Chat() {
   const messages = agentMessages[selectedAgentId] || []
   const sessionId = agentSessions[selectedAgentId] || ""
 
+  // Load messages and sessions from localStorage on mount
+  useEffect(() => {
+    const storedMessages = loadAllMessages()
+    const loadedMessages: Record<string, AgentMessage[]> = {}
+    const loadedSessions: Record<string, string> = {}
+    const loadedMetadata: Record<string, { agentId: string; startedAt: Date }> = {}
+
+    // Convert stored messages to AgentMessage format
+    for (const [agentId, msgs] of Object.entries(storedMessages)) {
+      loadedMessages[agentId] = msgs.map(msg => ({
+        ...msg,
+        timestamp: new Date(msg.timestamp)
+      }))
+
+      // Load session for this agent
+      const session = loadAgentSession(agentId)
+      if (session) {
+        loadedSessions[agentId] = session.sessionId
+        loadedMetadata[session.sessionId] = {
+          agentId,
+          startedAt: session.startedAt
+        }
+      }
+    }
+
+    setAgentMessages(loadedMessages)
+    setAgentSessions(loadedSessions)
+    setSessionMetadata(loadedMetadata)
+  }, [])
+
   // Set initial agent from URL or first agent
   useEffect(() => {
     if (agents.length > 0 && !selectedAgentId) {
@@ -68,6 +98,23 @@ export function Chat() {
     }
   }, [selectedAgentId, agentSessions])
 
+  // Save messages to localStorage whenever they change
+  useEffect(() => {
+    for (const [agentId, msgs] of Object.entries(agentMessages)) {
+      if (msgs.length > 0) {
+        const storedMessages: StoredMessage[] = msgs.map(msg => ({
+          id: msg.id,
+          role: msg.role,
+          content: msg.content,
+          timestamp: msg.timestamp.toISOString(),
+          toolName: msg.toolName,
+          toolResult: msg.toolResult
+        }))
+        saveMessages(agentId, storedMessages)
+      }
+    }
+  }, [agentMessages])
+
   // Save sessions to localStorage whenever they change
   useEffect(() => {
     if (Object.keys(agentSessions).length > 0) {
@@ -88,14 +135,19 @@ export function Chat() {
   // Clear chat - creates new session and clears messages
   const handleClearChat = () => {
     const newSessionId = generateSessionId()
+
+    // Clear messages in state (will trigger save to localStorage)
     setAgentMessages(prev => ({
       ...prev,
       [selectedAgentId]: []
     }))
+
+    // Create new session
     setAgentSessions(prev => ({
       ...prev,
       [selectedAgentId]: newSessionId
     }))
+
     setSessionMetadata(prev => ({
       ...prev,
       [newSessionId]: {
@@ -103,6 +155,9 @@ export function Chat() {
         startedAt: new Date()
       }
     }))
+
+    // Clear messages from localStorage
+    saveMessages(selectedAgentId, [])
   }
 
   // Map API agents to UI agent format

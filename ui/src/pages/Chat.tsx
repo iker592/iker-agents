@@ -10,13 +10,6 @@ import { invokeAgent, generateSessionId, saveSession, loadSessionMessages, saveM
 import { cn } from "@/lib/utils"
 import type { AgentMessage } from "@/types/agent"
 
-const statusColors = {
-  active: "success",
-  idle: "secondary",
-  error: "destructive",
-  stopped: "outline",
-} as const
-
 const typeColors = {
   research: "bg-blue-500/10 text-blue-500",
   coding: "bg-purple-500/10 text-purple-500",

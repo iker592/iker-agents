@@ -1,12 +1,11 @@
 import { useState, useEffect, useMemo } from "react"
-import { useSearchParams, useNavigate } from "react-router-dom"
-import { Bot, ChevronDown, Brain, Plus } from "lucide-react"
+import { useSearchParams } from "react-router-dom"
+import { Bot, Plus } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { ChatInterface } from "@/components/agents/ChatInterface"
-import { ThoughtLog } from "@/components/agents/ThoughtLog"
 import { useAgents } from "@/hooks/useAgents"
 import { invokeAgent, generateSessionId, saveSession, loadSessionMessages, saveMessages, getAgentSessions, type StoredMessage, type StoredSession } from "@/services/api"
 import { cn } from "@/lib/utils"
@@ -28,11 +27,9 @@ const typeColors = {
 
 export function Chat() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const navigate = useNavigate()
   const { agents, loading, error } = useAgents()
   const [selectedAgentId, setSelectedAgentId] = useState<string>("")
   const [currentSessionId, setCurrentSessionId] = useState<string>("")
-  const [showThoughts, setShowThoughts] = useState(true)
   const [isProcessing, setIsProcessing] = useState(false)
 
   // Store messages by sessionId
@@ -340,33 +337,6 @@ export function Chat() {
             onSendMessage={handleSendMessage}
           />
         </CardContent>
-      </Card>
-
-      {/* Thought log sidebar */}
-      <Card className={cn("w-80 shrink-0 transition-all", !showThoughts && "w-12")}>
-        <CardHeader
-          className="cursor-pointer border-b py-3"
-          onClick={() => setShowThoughts(!showThoughts)}
-        >
-          <div className="flex items-center justify-between">
-            {showThoughts ? (
-              <>
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <Brain className="h-4 w-4" />
-                  Thought Process
-                </CardTitle>
-                <ChevronDown className="h-4 w-4" />
-              </>
-            ) : (
-              <Brain className="h-4 w-4 mx-auto" />
-            )}
-          </div>
-        </CardHeader>
-        {showThoughts && (
-          <CardContent className="h-[calc(100vh-12rem)] p-0">
-            <ThoughtLog thoughts={[]} />
-          </CardContent>
-        )}
       </Card>
     </div>
   )

@@ -66,7 +66,7 @@ def format_agui_event(data: dict) -> str:
     elif event_type == "RUN_FINISHED":
         result = data.get("result")
         separator = f"{BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{RESET}"
-        output = f"\n{separator}\n{BLUE}│{RESET} {GREEN}{BOLD}✅ Run Finished{RESET}"
+        output = f"\n{separator}\n{BLUE}│{RESET} {GREEN}{BOLD}✅ Run Finished\n{RESET}"
         if result and result != "null":
             box_mid = f"{BLUE}├─────────────────────────────────────────────────┤{RESET}"
             output += f"\n{box_mid}\n{BLUE}│{RESET} {MAGENTA}{BOLD}📊 Structured Output:{RESET}\n"

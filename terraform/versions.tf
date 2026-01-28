@@ -7,6 +7,14 @@ terraform {
       version = ">= 6.18.0"
     }
   }
+
+  backend "s3" {
+    bucket         = "iker-agents-terraform-state"
+    key            = "iker-agents/terraform.tfstate"
+    region         = "us-east-1"
+    dynamodb_table = "iker-agents-terraform-locks"
+    encrypt        = true
+  }
 }
 
 provider "aws" {

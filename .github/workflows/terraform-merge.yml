@@ -1,0 +1,155 @@
+name: Merge - Deploy to Production
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'agents/**'
+      - 'agent-sdk/**'
+      - 'terraform/**'
+      - 'Dockerfile'
+      - '.github/workflows/terraform-merge.yml'
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  TF_VAR_aws_region: us-east-1
+
+jobs:
+  build-and-push:
+    name: Build & Push Docker Image
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.meta.outputs.short_sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::239388734812:role/GitHubActions-iker-agents
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up QEMU (for arm64)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Generate image metadata
+        id: meta
+        run: |
+          SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
+          echo "tags=${{ steps.login-ecr.outputs.registry }}/iker-agents/dsp-agent:${SHORT_SHA},${{ steps.login-ecr.outputs.registry }}/iker-agents/dsp-agent:latest" >> $GITHUB_OUTPUT
+          echo "short_sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  terraform-deploy:
+    name: Terraform Deploy
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    outputs:
+      runtime_id: ${{ steps.outputs.outputs.runtime_id }}
+      runtime_arn: ${{ steps.outputs.outputs.runtime_arn }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::239388734812:role/GitHubActions-iker-agents
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.5.7"
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        working-directory: terraform
+        run: terraform init
+
+      - name: Terraform Apply
+        working-directory: terraform
+        run: |
+          terraform apply -auto-approve -var="image_tag=${{ needs.build-and-push.outputs.image_tag }}"
+
+      - name: Get Outputs
+        id: outputs
+        working-directory: terraform
+        run: |
+          echo "runtime_id=$(terraform output -raw dsp_agent_runtime_id)" >> $GITHUB_OUTPUT
+          echo "runtime_arn=$(terraform output -raw dsp_agent_runtime_arn)" >> $GITHUB_OUTPUT
+
+  promote-all:
+    name: Promote All Endpoints
+    runs-on: ubuntu-latest
+    needs: terraform-deploy
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::239388734812:role/GitHubActions-iker-agents
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.13
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Get Latest Version
+        id: version
+        run: |
+          VERSION=$(uv run python scripts/get_latest_version.py ${{ needs.terraform-deploy.outputs.runtime_id }})
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Promote to Canary
+        run: |
+          uv run python scripts/promote_endpoint.py \
+            ${{ needs.terraform-deploy.outputs.runtime_id }} \
+            canary \
+            ${{ steps.version.outputs.version }}
+
+      - name: Promote to Prod
+        run: |
+          uv run python scripts/promote_endpoint.py \
+            ${{ needs.terraform-deploy.outputs.runtime_id }} \
+            prod \
+            ${{ steps.version.outputs.version }}
+
+      - name: Deployment Summary
+        run: |
+          echo "## Production Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Resource | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Runtime ID | \`${{ needs.terraform-deploy.outputs.runtime_id }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Version | \`${{ steps.version.outputs.version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Commit | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**All endpoints updated:** dev ✅ canary ✅ prod ✅" >> $GITHUB_STEP_SUMMARY

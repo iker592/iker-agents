@@ -16,7 +16,7 @@ module "dsp_agent" {
   agent_name    = "dsp-agent-tf"
   memory_name   = "dsp_agent_tf_memory"
   runtime_name  = "dsp_agent_tf"
-  ecr_image_uri = var.ecr_image_uri
+  ecr_image_uri = "${aws_ecr_repository.agent.repository_url}:${var.image_tag}"
   model         = "bedrock:global.anthropic.claude-sonnet-4-5-20250929-v1:0"
 
   extra_environment_variables = {
@@ -28,6 +28,8 @@ module "dsp_agent" {
   tags = merge(var.tags, {
     Agent = "dsp-agent-tf"
   })
+
+  depends_on = [aws_ecr_repository.agent]
 }
 
 # X-Ray resource policies for Transaction Search

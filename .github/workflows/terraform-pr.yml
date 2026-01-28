@@ -1,0 +1,275 @@
+name: Terraform PR Deploy
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'agents/**'
+      - 'agent-sdk/**'
+      - 'terraform/**'
+      - '.github/workflows/terraform-pr.yml'
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+env:
+  AWS_REGION: us-east-1
+  TF_VAR_aws_region: us-east-1
+
+jobs:
+  lint-and-test:
+    name: Lint & Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.13
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Lint
+        run: make lint
+
+      - name: Unit Tests
+        run: make test-unit
+
+  terraform-plan:
+    name: Terraform Plan
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+    outputs:
+      runtime_id: ${{ steps.outputs.outputs.runtime_id }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::239388734812:role/GitHubActions-iker-agents
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.5.7"
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        working-directory: terraform
+        run: terraform init
+
+      - name: Terraform Plan
+        id: plan
+        working-directory: terraform
+        run: |
+          terraform plan -no-color -out=tfplan 2>&1 | tee plan_output.txt
+          echo "plan_output<<EOF" >> $GITHUB_OUTPUT
+          cat plan_output.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Upload Plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan
+          path: terraform/tfplan
+
+      - name: Comment Plan on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const plan = `${{ steps.plan.outputs.plan_output }}`.substring(0, 60000);
+            const body = `## Terraform Plan
+
+            <details>
+            <summary>Show Plan</summary>
+
+            \`\`\`
+            ${plan}
+            \`\`\`
+
+            </details>
+
+            *Pusher: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+
+  terraform-apply-dev:
+    name: Deploy to Dev
+    runs-on: ubuntu-latest
+    needs: terraform-plan
+    outputs:
+      runtime_id: ${{ steps.outputs.outputs.runtime_id }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::239388734812:role/GitHubActions-iker-agents
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.5.7"
+          terraform_wrapper: false
+
+      - name: Download Plan
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan
+          path: terraform
+
+      - name: Terraform Init
+        working-directory: terraform
+        run: terraform init
+
+      - name: Terraform Apply
+        working-directory: terraform
+        run: terraform apply -auto-approve tfplan
+
+      - name: Get Outputs
+        id: outputs
+        working-directory: terraform
+        run: |
+          echo "runtime_id=$(terraform output -raw dsp_agent_runtime_id)" >> $GITHUB_OUTPUT
+          echo "runtime_arn=$(terraform output -raw dsp_agent_runtime_arn)" >> $GITHUB_OUTPUT
+          terraform output -json > ../terraform-outputs.json
+
+      - name: Upload Terraform Outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-outputs
+          path: terraform-outputs.json
+
+  promote-canary:
+    name: Promote to Canary
+    runs-on: ubuntu-latest
+    needs: [lint-and-test, terraform-apply-dev]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::239388734812:role/GitHubActions-iker-agents
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.13
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Get Latest Version
+        id: version
+        run: |
+          VERSION=$(uv run python scripts/get_latest_version.py ${{ needs.terraform-apply-dev.outputs.runtime_id }})
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Promote to Canary
+        run: |
+          uv run python scripts/promote_endpoint.py \
+            ${{ needs.terraform-apply-dev.outputs.runtime_id }} \
+            canary \
+            ${{ steps.version.outputs.version }}
+
+  e2e-tests:
+    name: E2E Tests (Canary)
+    runs-on: ubuntu-latest
+    needs: [terraform-apply-dev, promote-canary]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::239388734812:role/GitHubActions-iker-agents
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.13
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Download Terraform Outputs
+        uses: actions/download-artifact@v4
+        with:
+          name: terraform-outputs
+          path: .
+
+      - name: Run E2E Tests
+        env:
+          AGENT_RUNTIME_ARN: ${{ needs.terraform-apply-dev.outputs.runtime_arn }}
+          AGENT_ENDPOINT: canary
+        run: make test-e2e
+
+  promote-prod:
+    name: Promote to Prod
+    runs-on: ubuntu-latest
+    needs: [terraform-apply-dev, e2e-tests]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::239388734812:role/GitHubActions-iker-agents
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.13
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Get Latest Version
+        id: version
+        run: |
+          VERSION=$(uv run python scripts/get_latest_version.py ${{ needs.terraform-apply-dev.outputs.runtime_id }})
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Promote to Prod
+        run: |
+          uv run python scripts/promote_endpoint.py \
+            ${{ needs.terraform-apply-dev.outputs.runtime_id }} \
+            prod \
+            ${{ steps.version.outputs.version }}
+
+      - name: Summary
+        run: |
+          echo "## Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- Runtime ID: \`${{ needs.terraform-apply-dev.outputs.runtime_id }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Version: \`${{ steps.version.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Endpoints promoted: dev -> canary -> prod" >> $GITHUB_STEP_SUMMARY

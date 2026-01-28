@@ -105,10 +105,10 @@ test-unit:
 	uv run pytest -m unit
 
 test-e2e: aws-auth
-	$(eval ARN := $(shell cat cdk-outputs.json 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['DSPAgentStack']['RuntimeArn'])" 2>/dev/null || echo ""))
-	$(eval ENDPOINT := $(or $(ENDPOINT),DEFAULT))
+	$(eval ARN := $(or $(AGENT_RUNTIME_ARN),$(shell cat cdk-outputs.json 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['DSPAgentStack']['RuntimeArn'])" 2>/dev/null || echo "")))
+	$(eval ENDPOINT := $(or $(AGENT_ENDPOINT),$(ENDPOINT),dev))
 	@if [ -z "$(ARN)" ]; then \
-		echo "Error: No deployment found. Run 'make deploy' first."; \
+		echo "Error: No deployment found. Set AGENT_RUNTIME_ARN or run 'make deploy' first."; \
 		exit 1; \
 	fi
 	AGENT_RUNTIME_ARN=$(ARN) AGENT_ENDPOINT=$(ENDPOINT) uv run pytest -m e2e

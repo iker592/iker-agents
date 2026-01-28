@@ -14,6 +14,7 @@ Examples:
     # Get current endpoint info
     python promote_endpoint.py dsp_agent_tf-NBo13y3YHj dev --info
 """
+
 import argparse
 
 import boto3

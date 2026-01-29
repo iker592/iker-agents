@@ -33,3 +33,56 @@ output "dsp_agent_endpoint_arns" {
   description = "Map of DSP agent endpoint names to ARNs"
   value       = module.dsp_agent.endpoint_arns
 }
+
+# UI outputs
+output "ui_url" {
+  description = "UI CloudFront URL"
+  value       = var.deploy_ui ? module.ui[0].ui_url : null
+}
+
+output "ui_api_url" {
+  description = "UI API Gateway URL"
+  value       = var.deploy_ui ? module.ui[0].api_url : null
+}
+
+output "ui_bucket_name" {
+  description = "UI S3 bucket name"
+  value       = var.deploy_ui ? module.ui[0].bucket_name : null
+}
+
+output "ui_cloudfront_distribution_id" {
+  description = "CloudFront distribution ID for cache invalidation"
+  value       = var.deploy_ui ? module.ui[0].cloudfront_distribution_id : null
+}
+
+# Auth outputs
+output "cognito_user_pool_id" {
+  description = "Cognito User Pool ID"
+  value       = var.deploy_ui ? module.ui[0].cognito_user_pool_id : null
+}
+
+output "cognito_user_pool_client_id" {
+  description = "Cognito User Pool Client ID"
+  value       = var.deploy_ui ? module.ui[0].cognito_user_pool_client_id : null
+}
+
+output "cognito_domain" {
+  description = "Cognito hosted UI domain for OAuth"
+  value       = var.deploy_ui ? module.ui[0].cognito_domain : null
+}
+
+# MCP Server outputs
+output "mcp_lambda_url" {
+  description = "MCP Server Lambda Function URL (direct invocation)"
+  value       = var.deploy_gateway ? module.gateway[0].mcp_lambda_url : null
+}
+
+output "mcp_lambda_arn" {
+  description = "MCP Server Lambda ARN"
+  value       = var.deploy_gateway ? module.gateway[0].mcp_lambda_arn : null
+}
+
+output "mcp_lambda_function_name" {
+  description = "MCP Server Lambda function name"
+  value       = var.deploy_gateway ? module.gateway[0].mcp_lambda_function_name : null
+}

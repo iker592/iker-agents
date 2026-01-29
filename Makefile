@@ -39,8 +39,11 @@ help:
 	@echo ""
 	@echo "  Deployment"
 	@echo "    make deploy      Deploy main DSP agent stack"
-	@echo "    make deploy-all  Deploy ALL agent stacks (dsp, research, coding)"
+	@echo "    make deploy-all  Deploy ALL agent stacks (dsp, research, coding, ui)"
+	@echo "    make deploy-all-preview PR=N  Deploy ALL stacks for PR preview"
 	@echo "    make deploy-oidc Deploy GitHub OIDC stack (one-time setup for CI/CD)"
+	@echo "    make update-ui   Update UI with latest code changes"
+	@echo "    make update-ui-preview PR=N  Update preview UI for PR"
 	@echo ""
 	@echo "  Endpoint Promotion"
 	@echo "    make promote-canary VERSION=N  Update canary endpoint to version N"
@@ -61,6 +64,7 @@ help:
 	@echo ""
 	@echo "  Utilities"
 	@echo "    make clean       Clean cache files"
+	@echo "    make cleanup-preview PR=N  Delete all preview stacks for PR"
 
 setup:
 	@command -v uv >/dev/null 2>&1 || { echo "Installing uv..."; curl -LsSf https://astral.sh/uv/install.sh | sh; }
@@ -212,6 +216,58 @@ deploy-all: aws-auth
 	@echo ""
 	@echo "Deployment complete!"
 
+deploy-all-preview: aws-auth
+	@if [ -z "$(PR)" ]; then \
+		echo "Usage: make deploy-all-preview PR=<number>"; \
+		echo "Example: make deploy-all-preview PR=5"; \
+		exit 1; \
+	fi
+	@echo "🚀 Deploying preview stacks for PR $(PR)..."
+	@echo ""
+	@echo "Building UI..."
+	@cd ui && bun install && cd ..
+	@# First build with placeholder
+	@cd ui && VITE_API_URL=placeholder bun run build && cd ..
+	@echo ""
+	@echo "Deploying all stacks with preview context..."
+	@uv run cdk deploy --all \
+		--require-approval never \
+		--context preview=true \
+		--context pr=$(PR) \
+		--outputs-file cdk-outputs-pr-$(PR).json
+	@echo ""
+	@echo "Extracting API URL..."
+	@$(eval API_URL := $(shell cat cdk-outputs-pr-$(PR).json | python3 -c "import sys,json; print(json.load(sys.stdin).get('UIStack-PR$(PR)', {}).get('APIURL', ''))" 2>/dev/null))
+	@if [ -n "$(API_URL)" ]; then \
+		echo "Rebuilding UI with API URL: $(API_URL)"; \
+		cd ui && VITE_API_URL=$(API_URL) bun run build; \
+		BUCKET=$$(cat ../cdk-outputs-pr-$(PR).json | python3 -c "import sys,json; print(json.load(sys.stdin).get('UIStack-PR$(PR)', {}).get('UIBucketName', ''))"); \
+		if [ -n "$$BUCKET" ]; then \
+			echo "Syncing UI to $$BUCKET..."; \
+			aws s3 sync dist/ s3://$$BUCKET/ --delete; \
+		fi; \
+	fi
+	@echo ""
+	@echo "✅ Preview deployment complete!"
+	@echo ""
+	@echo "Preview URLs:"
+	@cat cdk-outputs-pr-$(PR).json | python3 -c "import sys,json; d=json.load(sys.stdin); print('  UI: ' + d.get('UIStack-PR$(PR)', {}).get('UIDistributionURL', 'N/A')); print('  API: ' + d.get('UIStack-PR$(PR)', {}).get('APIURL', 'N/A'))"
+	@echo ""
+	@echo "To clean up: make cleanup-preview PR=$(PR)"
+
+update-ui: aws-auth
+	@echo "🔄 Updating UI deployment..."
+	@bash scripts/update_ui.sh
+
+update-ui-preview: aws-auth
+	@if [ -z "$(PR)" ]; then \
+		echo "Usage: make update-ui-preview PR=<number>"; \
+		echo "Example: make update-ui-preview PR=5"; \
+		exit 1; \
+	fi
+	@echo "🔄 Updating preview UI for PR $(PR)..."
+	@bash scripts/update_ui.sh --preview $(PR)
+
 promote-canary: aws-auth
 	@if [ -z "$(VERSION)" ]; then \
 		echo "Usage: make promote-canary VERSION=N"; \
@@ -341,3 +397,16 @@ clean:
 	find . -type d -name ".ruff_cache" -exec rm -rf {} + 2>/dev/null || true
 	find . -type f -name "*.pyc" -delete 2>/dev/null || true
 	rm -f cdk-outputs*.json 2>/dev/null || true
+
+cleanup-preview: aws-auth
+	@if [ -z "$(PR)" ]; then \
+		echo "Usage: make cleanup-preview PR=<number>"; \
+		exit 1; \
+	fi
+	@echo "🧹 Cleaning up preview stacks for PR $(PR)..."
+	@uv run cdk destroy --all \
+		--context preview=true \
+		--context pr=$(PR) \
+		--force || true
+	@rm -f cdk-outputs-pr-$(PR).json
+	@echo "✅ Preview stacks deleted"

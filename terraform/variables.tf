@@ -30,3 +30,15 @@ variable "create_xray_policies" {
   type        = bool
   default     = false
 }
+
+variable "deploy_ui" {
+  description = "Whether to deploy the UI (S3 + Lambda + API Gateway + CloudFront)"
+  type        = bool
+  default     = true
+}
+
+variable "deploy_gateway" {
+  description = "Whether to deploy the MCP Gateway with demo tools"
+  type        = bool
+  default     = true
+}

@@ -28,3 +28,4 @@ cdk-outputs*.json
 
 # AI
 .claude
+ui/.env

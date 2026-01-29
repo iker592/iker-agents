@@ -260,6 +260,7 @@ module "gateway" {
 }
 
 # MCP Server Module - AgentCore Runtime for MCP Protocol
+# Note: No JWT auth - MCP server uses IAM auth (SigV4) for agent-to-agent invocation
 module "mcp_server" {
   count  = var.deploy_mcp_server ? 1 : 0
   source = "./modules/mcp-server"
@@ -269,10 +270,6 @@ module "mcp_server" {
   endpoint_name = "default"
   ecr_image_uri = "${aws_ecr_repository.mcp_server.repository_url}:${var.mcp_server_image_tag}"
   instructions  = "Business tools MCP server with customer, order, and analytics data"
-
-  # Use same Cognito as UI for JWT auth
-  cognito_user_pool_id = var.deploy_ui ? aws_cognito_user_pool.main[0].id : ""
-  cognito_client_ids   = var.deploy_ui ? [aws_cognito_user_pool_client.main[0].id] : []
 
   tags = merge(var.tags, {
     Component = "mcp-server"

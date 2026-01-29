@@ -96,16 +96,8 @@ resource "aws_bedrockagentcore_agent_runtime" "mcp_server" {
     }
   }
 
-  # Authorizer - use custom JWT if Cognito is configured
-  dynamic "authorizer_configuration" {
-    for_each = var.cognito_user_pool_id != "" ? [1] : []
-    content {
-      custom_jwt_authorizer {
-        discovery_url   = "https://cognito-idp.${local.region}.amazonaws.com/${var.cognito_user_pool_id}/.well-known/openid-configuration"
-        allowed_clients = var.cognito_client_ids
-      }
-    }
-  }
+  # No JWT authorizer - this runtime is invoked by other AgentCore runtimes using IAM auth (SigV4)
+  # JWT auth is for browser-to-runtime calls (like UI -> Agent), not for agent-to-agent calls
 
   tags = var.tags
 }

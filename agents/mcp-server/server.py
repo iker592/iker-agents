@@ -229,10 +229,12 @@ def get_revenue_forecast(months: int = 3) -> str:
     for i in range(months):
         future = now + timedelta(days=30 * (i + 1))
         projected = base * ((1 + growth) ** (i + 1))
-        forecast.append({
-            "month": future.strftime("%Y-%m"),
-            "projected_revenue": round(projected, 2),
-        })
+        forecast.append(
+            {
+                "month": future.strftime("%Y-%m"),
+                "projected_revenue": round(projected, 2),
+            }
+        )
 
     return json.dumps(
         {"base_revenue": base, "growth_rate": "5%", "forecast": forecast}, indent=2

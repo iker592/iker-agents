@@ -196,7 +196,15 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             input_text = body.get('input', '')
             # Generate session ID with minimum 33 chars (uuid.hex = 32 chars)
             session_id = body.get('session_id') or f"s-{uuid.uuid4().hex}"
-            user_id = body.get('user_id', 'default-user')
+
+            # Extract authenticated user from JWT claims (set by API Gateway authorizer)
+            # Falls back to body.user_id or default for unauthenticated requests
+            jwt_claims = event.get('requestContext', {}).get('authorizer', {}).get('jwt', {}).get('claims', {})
+            user_id = jwt_claims.get('sub') or jwt_claims.get('email') or body.get('user_id', 'anonymous-user')
+
+            # Log authenticated user for audit
+            if jwt_claims:
+                print(f"Authenticated request from user: {user_id}")
 
             if not agent_id or agent_id not in RUNTIME_ARNS:
                 return {
@@ -276,15 +284,113 @@ EOF
   }
 }
 
+# Cognito User Pool for authentication
+resource "aws_cognito_user_pool" "pool" {
+  count = var.enable_auth ? 1 : 0
+
+  name = "${var.name}-users"
+
+  # Username attributes
+  username_attributes      = ["email"]
+  auto_verified_attributes = ["email"]
+
+  # Password policy
+  password_policy {
+    minimum_length    = 8
+    require_lowercase = true
+    require_numbers   = true
+    require_symbols   = false
+    require_uppercase = true
+  }
+
+  # Account recovery
+  account_recovery_setting {
+    recovery_mechanism {
+      name     = "verified_email"
+      priority = 1
+    }
+  }
+
+  # User verification
+  verification_message_template {
+    default_email_option = "CONFIRM_WITH_CODE"
+    email_subject        = "Your Agent Hub verification code"
+    email_message        = "Your verification code is {####}"
+  }
+
+  # Schema attributes
+  schema {
+    name                = "email"
+    attribute_data_type = "String"
+    mutable             = true
+    required            = true
+
+    string_attribute_constraints {
+      min_length = 1
+      max_length = 256
+    }
+  }
+
+  tags = var.tags
+}
+
+resource "aws_cognito_user_pool_client" "client" {
+  count = var.enable_auth ? 1 : 0
+
+  name         = "${var.name}-client"
+  user_pool_id = aws_cognito_user_pool.pool[0].id
+
+  # OAuth settings
+  generate_secret                      = false
+  explicit_auth_flows                  = ["ALLOW_USER_SRP_AUTH", "ALLOW_REFRESH_TOKEN_AUTH"]
+  supported_identity_providers         = ["COGNITO"]
+  allowed_oauth_flows_user_pool_client = true
+  allowed_oauth_flows                  = ["code", "implicit"]
+  allowed_oauth_scopes                 = ["email", "openid", "profile"]
+
+  # Callback URLs - include CloudFront domain
+  callback_urls = length(var.callback_urls) > 0 ? var.callback_urls : [
+    "https://${aws_cloudfront_distribution.ui.domain_name}",
+    "https://${aws_cloudfront_distribution.ui.domain_name}/auth/callback"
+  ]
+
+  logout_urls = length(var.logout_urls) > 0 ? var.logout_urls : [
+    "https://${aws_cloudfront_distribution.ui.domain_name}",
+    "https://${aws_cloudfront_distribution.ui.domain_name}/logout"
+  ]
+
+  # Token validity
+  access_token_validity  = 1  # hours
+  id_token_validity      = 1  # hours
+  refresh_token_validity = 30 # days
+
+  token_validity_units {
+    access_token  = "hours"
+    id_token      = "hours"
+    refresh_token = "days"
+  }
+
+  # Prevent user existence errors
+  prevent_user_existence_errors = "ENABLED"
+}
+
+resource "aws_cognito_user_pool_domain" "domain" {
+  count = var.enable_auth ? 1 : 0
+
+  domain       = "${var.name}-${local.account_id}"
+  user_pool_id = aws_cognito_user_pool.pool[0].id
+}
+
 # API Gateway
 resource "aws_apigatewayv2_api" "api" {
   name          = "${var.name}-api"
   protocol_type = "HTTP"
 
   cors_configuration {
-    allow_origins = ["*"]
-    allow_methods = ["GET", "POST", "OPTIONS"]
-    allow_headers = ["Content-Type", "Authorization"]
+    allow_origins     = var.enable_auth ? ["https://${aws_cloudfront_distribution.ui.domain_name}"] : ["*"]
+    allow_methods     = ["GET", "POST", "OPTIONS"]
+    allow_headers     = ["Content-Type", "Authorization"]
+    allow_credentials = var.enable_auth
   }
 
   tags = var.tags
@@ -294,6 +400,21 @@ resource "aws_apigatewayv2_stage" "default" {
   api_id      = aws_apigatewayv2_api.api.id
   name        = "$default"
   auto_deploy = true
+}
+
+# JWT Authorizer for Cognito
+resource "aws_apigatewayv2_authorizer" "jwt" {
+  count = var.enable_auth ? 1 : 0
+
+  api_id           = aws_apigatewayv2_api.api.id
+  authorizer_type  = "JWT"
+  identity_sources = ["$request.header.Authorization"]
+  name             = "cognito-jwt"
+
+  jwt_configuration {
+    audience = [aws_cognito_user_pool_client.client[0].id]
+    issuer   = "https://cognito-idp.${local.region}.amazonaws.com/${aws_cognito_user_pool.pool[0].id}"
+  }
 }
 
 resource "aws_apigatewayv2_integration" "lambda" {
@@ -307,12 +428,15 @@ resource "aws_apigatewayv2_route" "agents" {
   api_id    = aws_apigatewayv2_api.api.id
   route_key = "GET /agents"
   target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+  # Agents list is public - no auth required
 }
 
 resource "aws_apigatewayv2_route" "invoke" {
-  api_id    = aws_apigatewayv2_api.api.id
-  route_key = "POST /invoke"
-  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+  api_id             = aws_apigatewayv2_api.api.id
+  route_key          = "POST /invoke"
+  target             = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+  authorization_type = var.enable_auth ? "JWT" : "NONE"
+  authorizer_id      = var.enable_auth ? aws_apigatewayv2_authorizer.jwt[0].id : null
 }
 
 resource "aws_lambda_permission" "api" {

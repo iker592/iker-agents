@@ -54,3 +54,19 @@ output "ui_cloudfront_distribution_id" {
   description = "CloudFront distribution ID for cache invalidation"
   value       = var.deploy_ui ? module.ui[0].cloudfront_distribution_id : null
 }
+
+# Auth outputs
+output "cognito_user_pool_id" {
+  description = "Cognito User Pool ID"
+  value       = var.deploy_ui ? module.ui[0].cognito_user_pool_id : null
+}
+
+output "cognito_user_pool_client_id" {
+  description = "Cognito User Pool Client ID"
+  value       = var.deploy_ui ? module.ui[0].cognito_user_pool_client_id : null
+}
+
+output "cognito_domain" {
+  description = "Cognito hosted UI domain for OAuth"
+  value       = var.deploy_ui ? module.ui[0].cognito_domain : null
+}

@@ -22,3 +22,21 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "enable_auth" {
+  description = "Enable Cognito authentication for the API"
+  type        = bool
+  default     = true
+}
+
+variable "callback_urls" {
+  description = "OAuth callback URLs for Cognito"
+  type        = list(string)
+  default     = []
+}
+
+variable "logout_urls" {
+  description = "OAuth logout URLs for Cognito"
+  type        = list(string)
+  default     = []
+}

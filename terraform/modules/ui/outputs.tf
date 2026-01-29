@@ -34,3 +34,24 @@ output "lambda_function_name" {
   description = "Lambda function name"
   value       = aws_lambda_function.proxy.function_name
 }
+
+# Cognito outputs
+output "cognito_user_pool_id" {
+  description = "Cognito User Pool ID"
+  value       = var.enable_auth ? aws_cognito_user_pool.pool[0].id : null
+}
+
+output "cognito_user_pool_client_id" {
+  description = "Cognito User Pool Client ID"
+  value       = var.enable_auth ? aws_cognito_user_pool_client.client[0].id : null
+}
+
+output "cognito_domain" {
+  description = "Cognito hosted UI domain"
+  value       = var.enable_auth ? "https://${aws_cognito_user_pool_domain.domain[0].domain}.auth.${data.aws_region.current.id}.amazoncognito.com" : null
+}
+
+output "auth_enabled" {
+  description = "Whether authentication is enabled"
+  value       = var.enable_auth
+}

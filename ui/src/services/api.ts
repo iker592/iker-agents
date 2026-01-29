@@ -2,6 +2,8 @@
  * API service for connecting to the agent backend
  */
 
+import { getAccessToken, isAuthConfigured } from './auth';
+
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 export interface Agent {
@@ -41,15 +43,29 @@ export async function getAgents(): Promise<Agent[]> {
  * Invoke an agent with a prompt
  */
 export async function invokeAgent(request: InvokeRequest): Promise<InvokeResponse> {
+  // Build headers with optional auth token
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+
+  // Add authorization header if auth is configured
+  if (isAuthConfigured()) {
+    const token = await getAccessToken();
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+  }
+
   const response = await fetch(`${API_BASE_URL}/invoke`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers,
     body: JSON.stringify(request),
   });
 
   if (!response.ok) {
+    if (response.status === 401) {
+      throw new Error('Authentication required. Please log in.');
+    }
     const error = await response.json().catch(() => ({ error: response.statusText }));
     throw new Error(error.error || 'Failed to invoke agent');
   }

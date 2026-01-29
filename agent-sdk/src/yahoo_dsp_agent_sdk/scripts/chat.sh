@@ -170,7 +170,7 @@ process_agui_response() {
                         local has_result=$(echo "$line" | jq -e '.result' >/dev/null 2>&1 && echo "true" || echo "false")
                         
                         echo -e "\n${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-                        echo -e "${BLUE}│${RESET} ${GREEN}${BOLD}✅ Run Finished${RESET}"
+                        echo -e "${BLUE}│${RESET} ${GREEN}${BOLD}✅ Run Finished\n${RESET}"
                         
                         if [ "$has_result" = "true" ]; then
                             local result_json=$(echo "$line" | jq -r '.result')

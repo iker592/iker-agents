@@ -94,6 +94,48 @@ jobs:
           echo "Image: ${{ steps.meta.outputs.tags }}"
           echo "Digest: ${{ steps.build.outputs.digest }}"
 
+  build-mcp-server:
+    name: Build MCP Server Image
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+    outputs:
+      image_tag: ${{ steps.meta.outputs.short_sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::239388734812:role/GitHubActions-iker-agents
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up QEMU (for arm64)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Generate image metadata
+        id: meta
+        run: |
+          SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
+          echo "tags=${{ steps.login-ecr.outputs.registry }}/iker-agents/mcp-server:${SHORT_SHA},${{ steps.login-ecr.outputs.registry }}/iker-agents/mcp-server:latest" >> $GITHUB_OUTPUT
+          echo "short_sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
+
+      - name: Build and push MCP Server image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./agents/mcp-server
+          platforms: linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   build-ui:
     name: Build UI
     runs-on: ubuntu-latest
@@ -131,7 +173,7 @@ jobs:
   terraform-deploy:
     name: Terraform Deploy
     runs-on: ubuntu-latest
-    needs: [build-and-push, build-ui]
+    needs: [build-and-push, build-mcp-server, build-ui]
     outputs:
       runtime_id: ${{ steps.outputs.outputs.runtime_id }}
       runtime_arn: ${{ steps.outputs.outputs.runtime_arn }}

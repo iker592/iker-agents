@@ -168,8 +168,9 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         }
 
     try:
-        path = event.get('path', '')
-        method = event.get('httpMethod', 'GET')
+        # Support both API Gateway v1 (REST) and v2 (HTTP) payload formats
+        path = event.get('rawPath') or event.get('path', '')
+        method = event.get('requestContext', {}).get('http', {}).get('method') or event.get('httpMethod', 'GET')
         body = json.loads(event.get('body', '{}')) if event.get('body') else {}
 
         # GET /agents - List available agents

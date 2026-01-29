@@ -114,8 +114,6 @@ module "dsp_agent" {
 
   extra_environment_variables = {
     AGENT_NAME = "DSP Agent (Terraform)"
-    # MCP Lambda name for direct invocation (no circular dependency)
-    MCP_LAMBDA_NAME = "agentcore-mcp-mcp-server"
   }
 
   endpoints = ["dev", "canary", "prod"]
@@ -125,11 +123,17 @@ module "dsp_agent" {
   cognito_user_pool_id = var.deploy_ui ? aws_cognito_user_pool.main[0].id : ""
   cognito_client_ids   = var.deploy_ui ? [aws_cognito_user_pool_client.main[0].id] : []
 
+  # MCP Server integration - agent invokes MCP server via AgentCore protocol
+  mcp_server_arn = var.deploy_mcp_server ? module.mcp_server[0].runtime_arn : ""
+
   tags = merge(var.tags, {
     Agent = "dsp-agent-tf"
   })
 
-  depends_on = [aws_ecr_repository.agent]
+  depends_on = [
+    aws_ecr_repository.agent,
+    module.mcp_server
+  ]
 }
 
 # X-Ray resource policies for Transaction Search
@@ -255,9 +259,23 @@ module "gateway" {
 }
 
 # MCP Server Module - AgentCore Runtime for MCP Protocol
-# Disabled - using Lambda MCP server instead (simpler, already deployed)
-# module "mcp_server" {
-#   count  = var.deploy_mcp_server ? 1 : 0
-#   source = "./modules/mcp-server"
-#   ...
-# }
+module "mcp_server" {
+  count  = var.deploy_mcp_server ? 1 : 0
+  source = "./modules/mcp-server"
+
+  name          = "agentcore-mcp"
+  runtime_name  = "mcp-server-tf"
+  endpoint_name = "default"
+  ecr_image_uri = "${aws_ecr_repository.mcp_server.repository_url}:${var.mcp_server_image_tag}"
+  instructions  = "Business tools MCP server with customer, order, and analytics data"
+
+  # Use same Cognito as UI for JWT auth
+  cognito_user_pool_id = var.deploy_ui ? aws_cognito_user_pool.main[0].id : ""
+  cognito_client_ids   = var.deploy_ui ? [aws_cognito_user_pool_client.main[0].id] : []
+
+  tags = merge(var.tags, {
+    Component = "mcp-server"
+  })
+
+  depends_on = [aws_ecr_repository.mcp_server]
+}

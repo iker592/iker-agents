@@ -173,12 +173,19 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         method = event.get('requestContext', {}).get('http', {}).get('method') or event.get('httpMethod', 'GET')
         body = json.loads(event.get('body', '{}')) if event.get('body') else {}
 
+        # Build ID-to-ARN mapping (convert name to lowercase-dash ID)
+        def get_agent_id(name):
+            return name.lower().replace(' ', '-')
+
+        AGENT_ID_TO_ARN = {get_agent_id(name): arn for name, arn in RUNTIME_ARNS.items()}
+        AGENT_ID_TO_NAME = {get_agent_id(name): name for name in RUNTIME_ARNS.keys()}
+
         # GET /agents - List available agents
         if path == '/agents' and method == 'GET':
             agents = []
             for name, arn in RUNTIME_ARNS.items():
                 agents.append({
-                    'id': name.lower().replace(' ', '-'),
+                    'id': get_agent_id(name),
                     'name': name,
                     'runtime_arn': arn,
                     'status': 'active'
@@ -206,17 +213,17 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             if jwt_claims:
                 print(f"Authenticated request from user: {user_id}")
 
-            if not agent_id or agent_id not in RUNTIME_ARNS:
+            if not agent_id or agent_id not in AGENT_ID_TO_ARN:
                 return {
                     'statusCode': 400,
                     'headers': headers,
                     'body': json.dumps({
                         'error': f'Invalid agent_id: {agent_id}',
-                        'available': list(RUNTIME_ARNS.keys())
+                        'available': list(AGENT_ID_TO_ARN.keys())
                     })
                 }
 
-            runtime_arn = RUNTIME_ARNS[agent_id]
+            runtime_arn = AGENT_ID_TO_ARN[agent_id]
 
             # Build payload for AgentCore
             payload = {

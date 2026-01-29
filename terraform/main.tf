@@ -1,5 +1,4 @@
-# DSP Agent - Terraform deployment
-# Creates resources alongside CDK with different names to avoid conflicts
+# DSP Agent + UI - Terraform deployment
 
 data "aws_caller_identity" "current" {}
 data "aws_region" "current" {}
@@ -84,4 +83,24 @@ resource "aws_xray_resource_policy" "transaction_search" {
       }
     ]
   })
+}
+
+# UI Module - Agent management interface
+module "ui" {
+  count  = var.deploy_ui ? 1 : 0
+  source = "./modules/ui"
+
+  name = "agent-ui-tf"
+
+  runtime_arns = {
+    "DSP Agent" = module.dsp_agent.runtime_arn
+  }
+
+  ui_dist_path = "${path.root}/../ui/dist"
+
+  tags = merge(var.tags, {
+    Component = "ui"
+  })
+
+  depends_on = [module.dsp_agent]
 }

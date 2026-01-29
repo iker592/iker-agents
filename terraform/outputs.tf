@@ -33,3 +33,24 @@ output "dsp_agent_endpoint_arns" {
   description = "Map of DSP agent endpoint names to ARNs"
   value       = module.dsp_agent.endpoint_arns
 }
+
+# UI outputs
+output "ui_url" {
+  description = "UI CloudFront URL"
+  value       = var.deploy_ui ? module.ui[0].ui_url : null
+}
+
+output "ui_api_url" {
+  description = "UI API Gateway URL"
+  value       = var.deploy_ui ? module.ui[0].api_url : null
+}
+
+output "ui_bucket_name" {
+  description = "UI S3 bucket name"
+  value       = var.deploy_ui ? module.ui[0].bucket_name : null
+}
+
+output "ui_cloudfront_distribution_id" {
+  description = "CloudFront distribution ID for cache invalidation"
+  value       = var.deploy_ui ? module.ui[0].cloudfront_distribution_id : null
+}

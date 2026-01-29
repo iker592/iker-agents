@@ -10,7 +10,8 @@ locals {
 
 # S3 Bucket for static UI hosting
 resource "aws_s3_bucket" "ui" {
-  bucket = "${var.name}-${local.account_id}"
+  bucket        = "${var.name}-${local.account_id}"
+  force_destroy = true # Allow bucket deletion even with files (for CI/CD)
 
   tags = var.tags
 }

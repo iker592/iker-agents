@@ -112,6 +112,14 @@ jobs:
 
       - name: Build UI
         working-directory: ui
+        env:
+          VITE_API_URL: https://t042pm32d2.execute-api.us-east-1.amazonaws.com
+          VITE_COGNITO_REGION: us-east-1
+          VITE_COGNITO_USER_POOL_ID: us-east-1_0Och8G0S2
+          VITE_COGNITO_CLIENT_ID: km1gk1jcpoud4j029bverljba
+          VITE_COGNITO_DOMAIN: https://agent-ui-tf-239388734812.auth.us-east-1.amazoncognito.com
+          VITE_AGENTCORE_ENDPOINT: https://bedrock-agentcore.us-east-1.amazonaws.com
+          VITE_RUNTIME_ARN: arn:aws:bedrock-agentcore:us-east-1:239388734812:runtime/dsp_agent_tf-NBo13y3YHj
         run: bun run build
 
       - name: Upload UI dist

@@ -28,18 +28,6 @@ variable "instructions" {
   default     = "Business data MCP server providing customer, order, and analytics tools"
 }
 
-variable "cognito_user_pool_id" {
-  description = "Cognito User Pool ID for authentication (optional)"
-  type        = string
-  default     = ""
-}
-
-variable "cognito_client_ids" {
-  description = "List of allowed Cognito client IDs"
-  type        = list(string)
-  default     = []
-}
-
 variable "tags" {
   description = "Tags to apply to resources"
   type        = map(string)

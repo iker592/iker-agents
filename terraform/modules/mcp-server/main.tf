@@ -83,43 +83,30 @@ resource "aws_iam_role_policy" "runtime_execution" {
 
 resource "aws_bedrockagentcore_agent_runtime" "mcp_server" {
   agent_runtime_name = var.runtime_name
+  description        = var.instructions
   role_arn           = aws_iam_role.runtime.arn
 
   network_configuration {
     network_mode = "PUBLIC"
   }
 
-  runtime_artifacts {
-    container {
+  agent_runtime_artifact {
+    container_configuration {
       container_uri = var.ecr_image_uri
     }
   }
 
-  protocol_configuration {
-    mcp {
-      instructions = var.instructions
-    }
-  }
-
-  # Authorizer - use custom JWT if Cognito is configured
-  dynamic "authorizer_configuration" {
-    for_each = var.cognito_user_pool_id != "" ? [1] : []
-    content {
-      custom_jwt_authorizer {
-        discovery_url   = "https://cognito-idp.${local.region}.amazonaws.com/${var.cognito_user_pool_id}/.well-known/openid-configuration"
-        allowed_clients = var.cognito_client_ids
-      }
-    }
-  }
+  # No JWT authorizer - this runtime is invoked by other AgentCore runtimes using IAM auth (SigV4)
+  # JWT auth is for browser-to-runtime calls (like UI -> Agent), not for agent-to-agent calls
 
   tags = var.tags
 }
 
 # Runtime Endpoint
-resource "aws_bedrockagentcore_runtime_endpoint" "mcp_server" {
-  runtime_endpoint_name = var.endpoint_name
-  runtime_id            = aws_bedrockagentcore_agent_runtime.mcp_server.agent_runtime_id
-  description           = "MCP Server endpoint"
+resource "aws_bedrockagentcore_agent_runtime_endpoint" "mcp_server" {
+  agent_runtime_id = aws_bedrockagentcore_agent_runtime.mcp_server.agent_runtime_id
+  name             = var.endpoint_name
+  description      = "MCP Server endpoint"
 
   tags = var.tags
 }

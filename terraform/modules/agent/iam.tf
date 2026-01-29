@@ -176,3 +176,29 @@ resource "aws_iam_role_policy" "lambda_invoke" {
   role   = aws_iam_role.runtime.id
   policy = data.aws_iam_policy_document.lambda_invoke.json
 }
+
+# Policy for MCP Server invocation (AgentCore Runtime)
+resource "aws_iam_role_policy" "invoke_mcp_server" {
+  count  = var.enable_mcp_server ? 1 : 0
+  name   = "invoke-mcp-server"
+  role   = aws_iam_role.runtime.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "InvokeMCPServer"
+        Effect = "Allow"
+        Action = [
+          "bedrock-agentcore:InvokeAgentRuntime",
+          "bedrock-agentcore:InvokeAgent",
+          "bedrock-agentcore:Invoke*"
+        ]
+        Resource = [
+          var.mcp_server_arn,
+          "${var.mcp_server_arn}/*"
+        ]
+      }
+    ]
+  })
+}

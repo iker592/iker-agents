@@ -38,15 +38,15 @@ variable "deploy_ui" {
 }
 
 variable "deploy_gateway" {
-  description = "Whether to deploy the MCP Gateway with business tools"
+  description = "Whether to deploy the MCP Gateway with Lambda tools (legacy, disabled - agent uses MCP Server Runtime directly)"
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "deploy_mcp_server" {
   description = "Whether to deploy the MCP server as AgentCore Runtime"
   type        = bool
-  default     = false  # Disabled for now - using Lambda MCP server instead
+  default     = true
 }
 
 variable "mcp_server_image_tag" {

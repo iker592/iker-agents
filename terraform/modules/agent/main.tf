@@ -39,6 +39,7 @@ resource "aws_bedrockagentcore_agent_runtime" "this" {
       MEMORY_ID  = aws_bedrockagentcore_memory.this.id
       MODEL      = var.model
     },
+    var.mcp_server_arn != "" ? { MCP_SERVER_ARN = var.mcp_server_arn } : {},
     var.extra_environment_variables
   )
 

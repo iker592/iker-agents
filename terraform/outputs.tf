@@ -93,7 +93,23 @@ output "mcp_lambda_arn" {
   value       = var.deploy_gateway ? module.gateway[0].mcp_lambda_arn : null
 }
 
-# MCP Server Runtime outputs (disabled - using Lambda instead)
-# output "mcp_server_runtime_id" { ... }
-# output "mcp_server_runtime_arn" { ... }
-# output "mcp_server_url" { ... }
+# MCP Server Runtime outputs
+output "mcp_server_runtime_id" {
+  description = "MCP server runtime ID"
+  value       = var.deploy_mcp_server ? module.mcp_server[0].runtime_id : null
+}
+
+output "mcp_server_runtime_arn" {
+  description = "MCP server runtime ARN"
+  value       = var.deploy_mcp_server ? module.mcp_server[0].runtime_arn : null
+}
+
+output "mcp_server_endpoint_arn" {
+  description = "MCP server endpoint ARN"
+  value       = var.deploy_mcp_server ? module.mcp_server[0].endpoint_arn : null
+}
+
+output "mcp_server_url" {
+  description = "MCP server URL for client connections"
+  value       = var.deploy_mcp_server ? module.mcp_server[0].mcp_url : null
+}

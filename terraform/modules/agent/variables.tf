@@ -60,3 +60,16 @@ variable "cognito_client_ids" {
   type        = list(string)
   default     = []
 }
+
+# MCP Server integration
+variable "mcp_server_arn" {
+  description = "ARN of MCP Server AgentCore Runtime (for agent-to-MCP invocation)"
+  type        = string
+  default     = ""
+}
+
+variable "enable_mcp_server" {
+  description = "Whether to enable MCP server integration (used for IAM policy creation)"
+  type        = bool
+  default     = false
+}

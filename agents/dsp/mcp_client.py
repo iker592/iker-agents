@@ -1,40 +1,19 @@
-"""MCP Client - Connects to AgentCore MCP Server Runtime using MCP protocol."""
+"""MCP Client - Connects to AgentCore MCP Server Runtime using boto3."""
 
 import json
 import os
 from typing import Any
 
 import boto3
-import httpx
-from botocore.auth import SigV4Auth
-from botocore.awsrequest import AWSRequest
 
 # MCP Server ARN - set by Terraform via environment variable
 MCP_SERVER_ARN = os.environ.get("MCP_SERVER_ARN", "")
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
 
 
-def _get_mcp_url() -> str:
-    """Build the MCP server URL from the runtime ARN."""
-    if not MCP_SERVER_ARN:
-        return ""
-
-    # URL-encode the ARN
-    encoded_arn = MCP_SERVER_ARN.replace(":", "%3A").replace("/", "%2F")
-    return f"https://bedrock-agentcore.{AWS_REGION}.amazonaws.com/runtimes/{encoded_arn}/invocations?qualifier=default"
-
-
-def _sign_request(method: str, url: str, body: str) -> dict[str, str]:
-    """Sign the request using SigV4 for AgentCore invocation."""
-    session = boto3.Session()
-    credentials = session.get_credentials()
-
-    request = AWSRequest(method=method, url=url, data=body)
-    request.headers["Content-Type"] = "application/json"
-
-    SigV4Auth(credentials, "bedrock-agentcore", AWS_REGION).add_auth(request)
-
-    return dict(request.headers)
+def _get_agentcore_client():
+    """Get the bedrock-agentcore boto3 client."""
+    return boto3.client("bedrock-agentcore", region_name=AWS_REGION)
 
 
 def call_mcp_tool(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -51,8 +30,7 @@ def call_mcp_tool(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         ValueError: If MCP_SERVER_ARN is not configured
         Exception: If MCP server returns an error
     """
-    url = _get_mcp_url()
-    if not url:
+    if not MCP_SERVER_ARN:
         raise ValueError("MCP_SERVER_ARN environment variable not set")
 
     # MCP JSON-RPC request
@@ -62,17 +40,30 @@ def call_mcp_tool(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         "method": "tools/call",
         "params": {"name": tool_name, "arguments": arguments},
     }
-    body = json.dumps(payload)
 
-    # Sign the request with SigV4
-    headers = _sign_request("POST", url, body)
+    client = _get_agentcore_client()
 
-    # Make the HTTP request
-    with httpx.Client(timeout=120.0) as client:
-        response = client.post(url, content=body, headers=headers)
-        response.raise_for_status()
+    # Invoke the MCP server runtime using boto3
+    response = client.invoke_agent_runtime(
+        agentRuntimeArn=MCP_SERVER_ARN,
+        qualifier="default",
+        contentType="application/json",
+        accept="application/json",
+        payload=json.dumps(payload).encode("utf-8"),
+    )
 
-    result = response.json()
+    # Read the streaming response
+    result_bytes = b""
+    event_stream = response.get("response")
+    if event_stream:
+        for event in event_stream:
+            if "chunk" in event:
+                result_bytes += event["chunk"].get("bytes", b"")
+
+    if not result_bytes:
+        raise Exception("Empty response from MCP server")
+
+    result = json.loads(result_bytes.decode("utf-8"))
 
     # Handle MCP JSON-RPC response
     if "error" in result:

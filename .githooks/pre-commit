@@ -1,4 +1,9 @@
 #!/bin/bash
-# Pre-commit hook: runs all PR checks before allowing commit
+# Pre-commit hook: auto-format and run all PR checks before allowing commit
 
+echo "🔧 Auto-formatting code..."
+make fix
+
+echo ""
+echo "✅ Running PR checks..."
 make pipeline-pr

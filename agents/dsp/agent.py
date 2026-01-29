@@ -1,3 +1,5 @@
+"""DSP Agent with MCP tool integration."""
+
 import os
 import sys
 from pathlib import Path
@@ -14,6 +16,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from yahoo_dsp_agent_sdk.agent import Agent
 
+from .mcp_tools import MCP_TOOLS
+
 
 def create_agent(
     memory_id: str | None = None,
@@ -22,7 +26,7 @@ def create_agent(
     region_name: str = "us-east-1",
     agent_id: str | None = None,
 ) -> Agent:
-    """Create a configured Strands agent with standard tools and AgentCore Memory.
+    """Create a configured Strands agent with MCP tools and AgentCore Memory.
 
     Args:
         memory_id: AgentCore Memory ID (optional, uses MEMORY_ID env var)
@@ -54,13 +58,20 @@ def create_agent(
         temperature=0.0,
     )
 
+    # Combine calculator with MCP business tools
+    all_tools = [calculator] + MCP_TOOLS
+
     agent = Agent(
         model=model,
         system_prompt=(
-            "You are a data analyst. You help users analyze data, perform calculations,"
-            "and provide insights. Be precise and concise in your responses."
+            "You are a business analyst with access to customer, order, "
+            "and analytics data. You help users analyze business data, "
+            "look up customer information, check orders, review analytics "
+            "metrics, and perform calculations. Always use the available "
+            "tools to fetch real data before answering questions. "
+            "Be precise and concise in your responses."
         ),
-        tools=[calculator],
+        tools=all_tools,
         session_manager=session_manager,
         agent_id=agent_id or "analyst-agent",
     )
@@ -69,20 +80,14 @@ def create_agent(
 
 
 if __name__ == "__main__":
-    print("=== Testing Analyst Agent ===\n")
+    print("=== Testing Business Analyst Agent ===\n")
 
     agent = create_agent()
 
-    print("Example 1: Simple calculation")
-    structured_output, result = agent.invoke("What is 15 * 3?")
-    print(f"✅ Result: {result}\n")
+    print("Example 1: List customers")
+    structured_output, result = agent.invoke("How many customers do we have?")
+    print(f"Result: {result.message['content'][0]['text']}\n")
 
-    print("Example 2: Percentage calculation")
-    structured_output, result = agent.invoke("What is 25% of 200?")
-    print(f"✅ Result: {result}\n")
-
-    print("Example 3: Growth analysis")
-    structured_output, result = agent.invoke(
-        "If revenue grew from 100 to 150, what's the percentage increase?"
-    )
-    print(f"✅ Result: {result}\n")
+    print("Example 2: Get analytics")
+    structured_output, result = agent.invoke("What are our current business metrics?")
+    print(f"Result: {result.message['content'][0]['text']}\n")

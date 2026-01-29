@@ -5,8 +5,14 @@ import uuid
 import boto3
 import pytest
 
+# Skip E2E tests when agent uses JWT auth (SigV4 won't work)
+# The UI uses JWT auth directly with AgentCore, but E2E tests use SigV4
+JWT_AUTH_ENABLED = os.environ.get("JWT_AUTH_ENABLED", "true").lower() == "true"
+SKIP_REASON = "Agent uses JWT auth; SigV4 E2E tests not compatible"
+
 
 @pytest.mark.e2e
+@pytest.mark.skipif(JWT_AUTH_ENABLED, reason=SKIP_REASON)
 class TestDeployedAgent:
     @pytest.fixture(autouse=True)
     def setup(self, deployed_runtime_arn, agent_endpoint):
@@ -60,6 +66,7 @@ class TestDeployedAgent:
 
 
 @pytest.mark.e2e
+@pytest.mark.skipif(JWT_AUTH_ENABLED, reason=SKIP_REASON)
 class TestDeployedAgentStreaming:
     @pytest.fixture(autouse=True)
     def setup(self, deployed_runtime_arn, agent_endpoint):

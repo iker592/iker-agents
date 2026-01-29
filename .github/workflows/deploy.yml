@@ -58,8 +58,99 @@ jobs:
       - name: Run unit tests
         run: uv run pytest -m unit
 
-      - name: Deploy all stacks
-        run: cdk deploy --all --require-approval never --outputs-file cdk-outputs.json
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Detect changed files
+        id: changes
+        run: |
+          # Compare with previous commit to detect changes
+          if git diff --name-only HEAD~1 HEAD | grep -E '^(agents/dsp/|iac/stack\.py)'; then
+            echo "dsp_changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "dsp_changed=false" >> $GITHUB_OUTPUT
+          fi
+
+          if git diff --name-only HEAD~1 HEAD | grep -E '^(agents/research/|iac/research_stack\.py)'; then
+            echo "research_changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "research_changed=false" >> $GITHUB_OUTPUT
+          fi
+
+          if git diff --name-only HEAD~1 HEAD | grep -E '^(agents/coding/|iac/coding_stack\.py)'; then
+            echo "coding_changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "coding_changed=false" >> $GITHUB_OUTPUT
+          fi
+
+          if git diff --name-only HEAD~1 HEAD | grep -E '^(ui/|iac/ui_stack\.py)'; then
+            echo "ui_changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "ui_changed=false" >> $GITHUB_OUTPUT
+          fi
+
+          if git diff --name-only HEAD~1 HEAD | grep -E '^(iac/base_stack\.py|iac/app\.py)'; then
+            echo "infrastructure_changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "infrastructure_changed=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build UI (initial)
+        if: steps.changes.outputs.ui_changed == 'true' || steps.changes.outputs.infrastructure_changed == 'true'
+        run: |
+          cd ui
+          bun install
+          VITE_API_URL=placeholder bun run build
+
+      - name: Deploy stacks
+        run: |
+          echo "Change detection:"
+          echo "  DSP Agent: ${{ steps.changes.outputs.dsp_changed }}"
+          echo "  Research Agent: ${{ steps.changes.outputs.research_changed }}"
+          echo "  Coding Agent: ${{ steps.changes.outputs.coding_changed }}"
+          echo "  UI: ${{ steps.changes.outputs.ui_changed }}"
+          echo "  Infrastructure: ${{ steps.changes.outputs.infrastructure_changed }}"
+          echo ""
+
+          # Build list of stacks to deploy
+          STACKS=""
+
+          if [ "${{ steps.changes.outputs.infrastructure_changed }}" = "true" ]; then
+            echo "⚠️  Infrastructure changed - deploying all stacks"
+            STACKS="--all"
+          else
+            [ "${{ steps.changes.outputs.dsp_changed }}" = "true" ] && STACKS="$STACKS DSPAgentStack"
+            [ "${{ steps.changes.outputs.research_changed }}" = "true" ] && STACKS="$STACKS ResearchAgentStack"
+            [ "${{ steps.changes.outputs.coding_changed }}" = "true" ] && STACKS="$STACKS CodingAgentStack"
+            [ "${{ steps.changes.outputs.ui_changed }}" = "true" ] && STACKS="$STACKS UIStack"
+          fi
+
+          if [ -z "$STACKS" ] || [ "$STACKS" = " " ]; then
+            echo "✅ No infrastructure changes detected - skipping deployment"
+            exit 0
+          fi
+
+          echo "📦 Deploying stacks: $STACKS"
+          cdk deploy $STACKS --require-approval never --outputs-file cdk-outputs.json
+
+      - name: Rebuild UI with API URL
+        run: |
+          API_URL=$(cat cdk-outputs.json | python3 -c "import sys,json; print(json.load(sys.stdin).get('UIStack', {}).get('APIURL', ''))")
+          if [ -n "$API_URL" ]; then
+            echo "Rebuilding UI with API_URL: $API_URL"
+            cd ui
+            VITE_API_URL=$API_URL bun run build
+            # Sync to S3 bucket
+            BUCKET_NAME=$(cat ../cdk-outputs.json | python3 -c "import sys,json; print(json.load(sys.stdin).get('UIStack', {}).get('UIBucketName', ''))")
+            if [ -n "$BUCKET_NAME" ]; then
+              aws s3 sync dist/ s3://$BUCKET_NAME/ --delete
+              # Invalidate CloudFront cache
+              DISTRIBUTION_ID=$(aws cloudfront list-distributions --query "DistributionList.Items[?Origins.Items[0].DomainName=='$BUCKET_NAME.s3.amazonaws.com'].Id | [0]" --output text)
+              if [ -n "$DISTRIBUTION_ID" ]; then
+                aws cloudfront create-invalidation --distribution-id $DISTRIBUTION_ID --paths "/*"
+              fi
+            fi
+          fi
 
       - name: Update dev endpoints
         run: |

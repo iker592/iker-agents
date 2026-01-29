@@ -43,10 +43,12 @@ class AgentStack(Stack):
         )
 
         # Create memory (name pattern: ^[a-zA-Z][a-zA-Z0-9_]{0,47}$)
+        # Sanitize agent_name: lowercase, replace spaces and hyphens with underscores
+        sanitized_name = agent_name.lower().replace(" ", "_").replace("-", "_")
         memory = Memory(
             self,
             "Memory",
-            memory_name=f"{agent_name.lower().replace(' ', '_')}_memory",
+            memory_name=f"{sanitized_name}_memory",
         )
 
         # Build environment variables
@@ -59,11 +61,11 @@ class AgentStack(Stack):
         if extra_environment_variables:
             env_vars.update(extra_environment_variables)
 
-        # Create runtime
+        # Create runtime (name: letter start, only letters/numbers/underscores)
         runtime = Runtime(
             self,
             f"{agent_name}Runtime",
-            runtime_name=agent_name.lower().replace(" ", "_"),
+            runtime_name=sanitized_name,
             agent_runtime_artifact=artifact,
             environment_variables=env_vars,
         )

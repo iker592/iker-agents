@@ -30,3 +30,27 @@ variable "create_xray_policies" {
   type        = bool
   default     = false
 }
+
+variable "deploy_ui" {
+  description = "Whether to deploy the UI (S3 + Lambda + API Gateway + CloudFront)"
+  type        = bool
+  default     = true
+}
+
+variable "deploy_gateway" {
+  description = "Whether to deploy the MCP Gateway with business tools"
+  type        = bool
+  default     = true
+}
+
+variable "deploy_mcp_server" {
+  description = "Whether to deploy the MCP server as AgentCore Runtime"
+  type        = bool
+  default     = false  # Disabled for now - using Lambda MCP server instead
+}
+
+variable "mcp_server_image_tag" {
+  description = "Docker image tag for MCP server"
+  type        = string
+  default     = "latest"
+}

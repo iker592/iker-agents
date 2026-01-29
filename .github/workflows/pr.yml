@@ -4,6 +4,9 @@ on:
   pull_request:
     branches: [main]
 
+env:
+  AWS_REGION: us-east-1
+
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
@@ -23,4 +26,345 @@ jobs:
 
       - name: PR checks
         run: make pipeline-pr
+
+  full-preview:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for proper diff
+
+      - name: Set up QEMU for ARM64 builds
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install CDK CLI
+        run: npm install -g aws-cdk
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.13
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Detect changed files
+        id: changes
+        run: |
+          # Check only files changed in the latest commit (not entire PR)
+          echo "📝 Detecting changes in latest commit..."
+
+          # Use the actual PR head commit, not the merge commit
+          COMMIT_SHA="${{ github.event.pull_request.head.sha }}"
+          echo "PR head commit: $COMMIT_SHA"
+          echo ""
+
+          # Debug git state
+          echo "Git log (last 3 commits on PR branch):"
+          git log --oneline -3 $COMMIT_SHA
+          echo ""
+
+          # Get parent of the actual commit
+          PARENT_SHA=$(git rev-parse ${COMMIT_SHA}^)
+          echo "Parent commit: $PARENT_SHA"
+          echo ""
+
+          # Compare actual commit with its parent (not merge commit)
+          CHANGED_FILES=$(git diff --name-only $PARENT_SHA $COMMIT_SHA)
+
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "❌ ERROR: No files detected!"
+            echo "Trying fallback..."
+            CHANGED_FILES=$(git diff-tree --no-commit-id --name-only -r $COMMIT_SHA)
+          fi
+
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "❌ Both methods failed!"
+            git log -1 --stat $COMMIT_SHA
+            exit 1
+          fi
+
+          echo "✅ Changed files in latest commit:"
+          echo "$CHANGED_FILES"
+          echo ""
+
+          # Check DSP agent
+          if echo "$CHANGED_FILES" | grep -qE '^(agents/dsp/|iac/stack\.py)'; then
+            echo "dsp_changed=true" >> $GITHUB_OUTPUT
+            echo "✅ DSP changed"
+          else
+            echo "dsp_changed=false" >> $GITHUB_OUTPUT
+            echo "❌ DSP not changed"
+          fi
+
+          # Check Research agent
+          if echo "$CHANGED_FILES" | grep -qE '^(agents/research/|iac/research_stack\.py)'; then
+            echo "research_changed=true" >> $GITHUB_OUTPUT
+            echo "✅ Research changed"
+          else
+            echo "research_changed=false" >> $GITHUB_OUTPUT
+            echo "❌ Research not changed"
+          fi
+
+          # Check Coding agent
+          if echo "$CHANGED_FILES" | grep -qE '^(agents/coding/|iac/coding_stack\.py)'; then
+            echo "coding_changed=true" >> $GITHUB_OUTPUT
+            echo "✅ Coding changed"
+          else
+            echo "coding_changed=false" >> $GITHUB_OUTPUT
+            echo "❌ Coding not changed"
+          fi
+
+          # Check UI
+          if echo "$CHANGED_FILES" | grep -qE '^(ui/|iac/ui_stack\.py)'; then
+            echo "ui_changed=true" >> $GITHUB_OUTPUT
+            echo "✅ UI changed"
+          else
+            echo "ui_changed=false" >> $GITHUB_OUTPUT
+            echo "❌ UI not changed"
+          fi
+
+          # Check infrastructure
+          if echo "$CHANGED_FILES" | grep -qE '^(iac/base_stack\.py|iac/app\.py)'; then
+            echo "infrastructure_changed=true" >> $GITHUB_OUTPUT
+            echo "✅ Infrastructure changed"
+          else
+            echo "infrastructure_changed=false" >> $GITHUB_OUTPUT
+            echo "❌ Infrastructure not changed"
+          fi
+
+          echo ""
+          echo "Summary:"
+          echo "  DSP: $(echo "$CHANGED_FILES" | grep -qE '^(agents/dsp/|iac/stack\.py)' && echo "YES" || echo "NO")"
+          echo "  Research: $(echo "$CHANGED_FILES" | grep -qE '^(agents/research/|iac/research_stack\.py)' && echo "YES" || echo "NO")"
+          echo "  Coding: $(echo "$CHANGED_FILES" | grep -qE '^(agents/coding/|iac/coding_stack\.py)' && echo "YES" || echo "NO")"
+          echo "  UI: $(echo "$CHANGED_FILES" | grep -qE '^(ui/|iac/ui_stack\.py)' && echo "YES" || echo "NO")"
+          echo "  Infrastructure: $(echo "$CHANGED_FILES" | grep -qE '^(iac/base_stack\.py|iac/app\.py)' && echo "YES" || echo "NO")"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy full preview stack
+        id: deploy
+        run: |
+          PR_NUMBER=${{ github.event.pull_request.number }}
+
+          echo "🚀 Deploying preview for PR ${PR_NUMBER}..."
+          echo ""
+          echo "Change detection:"
+          echo "  DSP Agent: ${{ steps.changes.outputs.dsp_changed }}"
+          echo "  Research Agent: ${{ steps.changes.outputs.research_changed }}"
+          echo "  Coding Agent: ${{ steps.changes.outputs.coding_changed }}"
+          echo "  UI: ${{ steps.changes.outputs.ui_changed }}"
+          echo "  Infrastructure: ${{ steps.changes.outputs.infrastructure_changed }}"
+          echo ""
+
+          # Build UI if needed
+          if [ "${{ steps.changes.outputs.ui_changed }}" = "true" ] || [ "${{ steps.changes.outputs.infrastructure_changed }}" = "true" ]; then
+            echo "📦 Building UI..."
+            cd ui && bun install && cd ..
+            cd ui && VITE_API_URL=placeholder bun run build && cd ..
+          fi
+
+          # Build list of stacks to deploy
+          STACKS=""
+
+          # Deploy infrastructure changes or all if infrastructure changed
+          if [ "${{ steps.changes.outputs.infrastructure_changed }}" = "true" ]; then
+            echo "⚠️  Infrastructure changed - deploying all stacks"
+            STACKS="--all"
+          else
+            # Selective deployment based on what changed
+            [ "${{ steps.changes.outputs.dsp_changed }}" = "true" ] && STACKS="$STACKS DSPAgentStack-PR${PR_NUMBER}"
+            [ "${{ steps.changes.outputs.research_changed }}" = "true" ] && STACKS="$STACKS ResearchAgentStack-PR${PR_NUMBER}"
+            [ "${{ steps.changes.outputs.coding_changed }}" = "true" ] && STACKS="$STACKS CodingAgentStack-PR${PR_NUMBER}"
+            [ "${{ steps.changes.outputs.ui_changed }}" = "true" ] && STACKS="$STACKS UIStack-PR${PR_NUMBER}"
+          fi
+
+          if [ -z "$STACKS" ] || [ "$STACKS" = " " ]; then
+            echo "✅ No infrastructure changes detected - skipping deployment"
+            echo "preview_url=" >> $GITHUB_OUTPUT
+            echo "api_url=" >> $GITHUB_OUTPUT
+            echo "skipped=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "📦 Deploying stacks: $STACKS"
+
+          # Deploy selected stacks
+          cdk deploy $STACKS \
+            --require-approval never \
+            --context preview=true \
+            --context pr=${PR_NUMBER} \
+            --outputs-file cdk-outputs-pr-${PR_NUMBER}.json
+
+          # Extract URLs
+          UI_URL=$(cat cdk-outputs-pr-${PR_NUMBER}.json | python3 -c "import sys,json; print(json.load(sys.stdin).get('UIStack-PR${PR_NUMBER}', {}).get('UIDistributionURL', ''))")
+          API_URL=$(cat cdk-outputs-pr-${PR_NUMBER}.json | python3 -c "import sys,json; print(json.load(sys.stdin).get('UIStack-PR${PR_NUMBER}', {}).get('APIURL', ''))")
+
+          # Rebuild UI with real API URL
+          if [ -n "$API_URL" ]; then
+            echo "Rebuilding UI with API URL: $API_URL"
+            cd ui && VITE_API_URL=$API_URL bun run build
+
+            # Sync to S3
+            BUCKET=$(cat ../cdk-outputs-pr-${PR_NUMBER}.json | python3 -c "import sys,json; print(json.load(sys.stdin).get('UIStack-PR${PR_NUMBER}', {}).get('UIBucketName', ''))")
+            if [ -n "$BUCKET" ]; then
+              aws s3 sync dist/ s3://$BUCKET/ --delete
+            fi
+          fi
+
+          echo "preview_url=$UI_URL" >> $GITHUB_OUTPUT
+          echo "api_url=$API_URL" >> $GITHUB_OUTPUT
+
+      - name: Comment PR with preview URL
+        uses: actions/github-script@v7
+        if: steps.deploy.outputs.skipped != 'true'
+        with:
+          script: |
+            const previewUrl = '${{ steps.deploy.outputs.preview_url }}';
+            const apiUrl = '${{ steps.deploy.outputs.api_url }}';
+            const prNumber = ${{ github.event.pull_request.number }};
+
+            const dspChanged = '${{ steps.changes.outputs.dsp_changed }}' === 'true';
+            const researchChanged = '${{ steps.changes.outputs.research_changed }}' === 'true';
+            const codingChanged = '${{ steps.changes.outputs.coding_changed }}' === 'true';
+            const uiChanged = '${{ steps.changes.outputs.ui_changed }}' === 'true';
+            const infraChanged = '${{ steps.changes.outputs.infrastructure_changed }}' === 'true';
+
+            let deployedStacks = [];
+            if (infraChanged) {
+              deployedStacks = ['All stacks (infrastructure change)'];
+            } else {
+              if (dspChanged) deployedStacks.push('DSP Agent');
+              if (researchChanged) deployedStacks.push('Research Agent');
+              if (codingChanged) deployedStacks.push('Coding Agent');
+              if (uiChanged) deployedStacks.push('UI');
+            }
+
+            const body = `## 🚀 Preview Deployed
+
+            Your changes have been deployed to a preview environment!
+
+            **🌐 Preview URL:** ${previewUrl}
+            **🔌 API URL:** ${apiUrl}
+
+            ### What Changed
+            ${deployedStacks.map(s => `- ✅ ${s}`).join('\n')}
+
+            ### Test It
+            Try chatting with the agents - they're fully functional!
+
+            <details>
+            <summary>Preview Details</summary>
+
+            - **Region:** \`${{ env.AWS_REGION }}\`
+            - **PR:** #${prNumber}
+            - **Commit:** ${context.sha.substring(0, 7)}
+            - **Deployed Stacks:** ${deployedStacks.join(', ')}
+
+            The preview stacks will be automatically deleted when the PR is closed.
+            </details>`;
+
+            // Find existing preview comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+            });
+
+            const previewComment = comments.find(comment =>
+              comment.user.type === 'Bot' &&
+              comment.body.includes('UI Preview Deployed')
+            );
+
+            if (previewComment) {
+              // Update existing comment
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: previewComment.id,
+                body: body,
+              });
+            } else {
+              // Create new comment
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body: body,
+              });
+            }
+
+  cleanup-preview:
+    runs-on: ubuntu-latest
+    if: github.event.action == 'closed'
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install CDK CLI
+        run: npm install -g aws-cdk
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.13
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Delete preview stacks
+        run: |
+          PR_NUMBER=${{ github.event.pull_request.number }}
+
+          echo "🧹 Cleaning up preview stacks for PR ${PR_NUMBER}..."
+
+          # Destroy all preview stacks
+          cdk destroy --all \
+            --context preview=true \
+            --context pr=${PR_NUMBER} \
+            --force || true
+
+          echo "✅ Preview stacks deleted"
 

@@ -2,7 +2,8 @@ import { Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { AgentCard } from "@/components/agents/AgentCard"
 import { AgentStats } from "@/components/agents/AgentStats"
-import { mockAgents, mockSessions } from "@/data/agents"
+import { useAgents } from "@/hooks/useAgents"
+import { mockSessions } from "@/data/agents"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -20,6 +21,7 @@ function formatTimeAgo(date: Date): string {
 }
 
 export function Dashboard() {
+  const { agents, loading } = useAgents()
   const recentSessions = mockSessions.slice(0, 5)
 
   return (
@@ -37,36 +39,41 @@ export function Dashboard() {
         </Button>
       </div>
 
-      <AgentStats agents={mockAgents} />
+      <AgentStats agents={agents} />
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-xl font-semibold">Agents</h2>
-            <Button variant="ghost" size="sm" asChild>
-              <Link to="/agents">View all</Link>
-            </Button>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            {mockAgents.slice(0, 4).map((agent) => (
-              <AgentCard key={agent.id} agent={agent} />
-            ))}
-          </div>
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <p className="text-muted-foreground">Loading agents...</p>
         </div>
+      ) : (
+        <div className="grid gap-6 lg:grid-cols-3">
+          <div className="lg:col-span-2">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-xl font-semibold">Agents</h2>
+              <Button variant="ghost" size="sm" asChild>
+                <Link to="/agents">View all</Link>
+              </Button>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              {agents.slice(0, 4).map((agent) => (
+                <AgentCard key={agent.id} agent={agent} />
+              ))}
+            </div>
+          </div>
 
-        <div>
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Recent Sessions</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ScrollArea className="h-[400px]">
-                <div className="space-y-4">
-                  {recentSessions.map((session) => {
-                    const agent = mockAgents.find(
-                      (a) => a.id === session.agentId
-                    )
-                    return (
+          <div>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Recent Sessions</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-[400px]">
+                  <div className="space-y-4">
+                    {recentSessions.map((session) => {
+                      const agent = agents.find(
+                        (a) => a.id === session.agentId
+                      )
+                      return (
                       <div
                         key={session.id}
                         className="flex items-center justify-between rounded-lg border p-3"
@@ -95,13 +102,14 @@ export function Dashboard() {
                         </div>
                       </div>
                     )
-                  })}
-                </div>
-              </ScrollArea>
-            </CardContent>
-          </Card>
+                    })}
+                  </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }

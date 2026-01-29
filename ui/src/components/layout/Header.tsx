@@ -1,11 +1,13 @@
-import { Bell, Search, Moon, Sun } from "lucide-react"
+import { Bell, Search, Moon, Sun, LogIn, LogOut } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { useEffect, useState } from "react"
+import { useAuth } from "@/components/AuthProvider"
 
 export function Header() {
   const [isDark, setIsDark] = useState(false)
+  const { isConfigured, isLoggedIn, user, loading, login, logout } = useAuth()
 
   useEffect(() => {
     const isDarkMode = window.matchMedia("(prefers-color-scheme: dark)").matches
@@ -15,6 +17,22 @@ export function Header() {
   const toggleTheme = () => {
     setIsDark(!isDark)
     document.documentElement.classList.toggle("dark")
+  }
+
+  // Get user initials for avatar
+  const getInitials = () => {
+    if (user?.name) {
+      return user.name
+        .split(' ')
+        .map((n) => n[0])
+        .join('')
+        .toUpperCase()
+        .slice(0, 2)
+    }
+    if (user?.email) {
+      return user.email.slice(0, 2).toUpperCase()
+    }
+    return 'U'
   }
 
   return (
@@ -41,9 +59,35 @@ export function Header() {
           <Bell className="h-5 w-5" />
           <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-destructive" />
         </Button>
-        <Avatar className="h-8 w-8">
-          <AvatarFallback className="text-xs">IK</AvatarFallback>
-        </Avatar>
+
+        {/* Auth section */}
+        {isConfigured && !loading && (
+          <>
+            {isLoggedIn ? (
+              <>
+                <Avatar className="h-8 w-8">
+                  <AvatarFallback className="text-xs">{getInitials()}</AvatarFallback>
+                </Avatar>
+                <Button variant="ghost" size="sm" onClick={logout} className="gap-2">
+                  <LogOut className="h-4 w-4" />
+                  Sign Out
+                </Button>
+              </>
+            ) : (
+              <Button variant="default" size="sm" onClick={login} className="gap-2">
+                <LogIn className="h-4 w-4" />
+                Sign In
+              </Button>
+            )}
+          </>
+        )}
+
+        {/* Show avatar without auth when not configured */}
+        {!isConfigured && (
+          <Avatar className="h-8 w-8">
+            <AvatarFallback className="text-xs">U</AvatarFallback>
+          </Avatar>
+        )}
       </div>
     </header>
   )

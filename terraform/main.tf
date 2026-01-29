@@ -1,5 +1,4 @@
-# DSP Agent - Terraform deployment
-# Creates resources alongside CDK with different names to avoid conflicts
+# DSP Agent + UI - Terraform deployment
 
 data "aws_caller_identity" "current" {}
 data "aws_region" "current" {}
@@ -7,6 +6,100 @@ data "aws_region" "current" {}
 locals {
   account_id = data.aws_caller_identity.current.account_id
   region     = data.aws_region.current.id
+}
+
+# ============================================================================
+# Cognito Authentication (created at root level to avoid circular dependencies)
+# Both dsp_agent (JWT auth) and ui (OAuth) modules need Cognito IDs
+# ============================================================================
+
+resource "aws_cognito_user_pool" "main" {
+  count = var.deploy_ui ? 1 : 0
+
+  name = "agent-ui-tf-users"
+
+  username_attributes      = ["email"]
+  auto_verified_attributes = ["email"]
+
+  password_policy {
+    minimum_length    = 8
+    require_lowercase = true
+    require_numbers   = true
+    require_symbols   = false
+    require_uppercase = true
+  }
+
+  account_recovery_setting {
+    recovery_mechanism {
+      name     = "verified_email"
+      priority = 1
+    }
+  }
+
+  verification_message_template {
+    default_email_option = "CONFIRM_WITH_CODE"
+    email_subject        = "Your Agent Hub verification code"
+    email_message        = "Your verification code is {####}"
+  }
+
+  schema {
+    name                = "email"
+    attribute_data_type = "String"
+    mutable             = true
+    required            = true
+
+    string_attribute_constraints {
+      min_length = 1
+      max_length = 256
+    }
+  }
+
+  tags = var.tags
+}
+
+resource "aws_cognito_user_pool_domain" "main" {
+  count = var.deploy_ui ? 1 : 0
+
+  domain       = "agent-ui-tf-${local.account_id}"
+  user_pool_id = aws_cognito_user_pool.main[0].id
+}
+
+# Cognito client - created at root level for JWT auth
+# Callback URLs are updated by UI module after CloudFront is created
+resource "aws_cognito_user_pool_client" "main" {
+  count = var.deploy_ui ? 1 : 0
+
+  name         = "agent-ui-tf-client"
+  user_pool_id = aws_cognito_user_pool.main[0].id
+
+  generate_secret                      = false
+  explicit_auth_flows                  = ["ALLOW_USER_SRP_AUTH", "ALLOW_REFRESH_TOKEN_AUTH"]
+  supported_identity_providers         = ["COGNITO"]
+  allowed_oauth_flows_user_pool_client = true
+  allowed_oauth_flows                  = ["code", "implicit"]
+  allowed_oauth_scopes                 = ["email", "openid", "profile"]
+
+  # Placeholder callback URLs - will be updated by UI module via lifecycle
+  # Using localhost for initial deployment
+  callback_urls = ["http://localhost:5173/auth/callback"]
+  logout_urls   = ["http://localhost:5173"]
+
+  access_token_validity  = 1  # hours
+  id_token_validity      = 1  # hours
+  refresh_token_validity = 30 # days
+
+  token_validity_units {
+    access_token  = "hours"
+    id_token      = "hours"
+    refresh_token = "days"
+  }
+
+  prevent_user_existence_errors = "ENABLED"
+
+  # Allow callback URLs to be updated externally (by UI module)
+  lifecycle {
+    ignore_changes = [callback_urls, logout_urls]
+  }
 }
 
 # DSP Agent module instance
@@ -21,9 +114,16 @@ module "dsp_agent" {
 
   extra_environment_variables = {
     AGENT_NAME = "DSP Agent (Terraform)"
+    # MCP Lambda name for direct invocation (no circular dependency)
+    MCP_LAMBDA_NAME = "agentcore-mcp-mcp-server"
   }
 
   endpoints = ["dev", "canary", "prod"]
+
+  # JWT auth for direct browser-to-AgentCore streaming (bypasses API Gateway 30s timeout)
+  # Uses root-level Cognito to avoid circular dependency with UI module
+  cognito_user_pool_id = var.deploy_ui ? aws_cognito_user_pool.main[0].id : ""
+  cognito_client_ids   = var.deploy_ui ? [aws_cognito_user_pool_client.main[0].id] : []
 
   tags = merge(var.tags, {
     Agent = "dsp-agent-tf"
@@ -85,3 +185,79 @@ resource "aws_xray_resource_policy" "transaction_search" {
     ]
   })
 }
+
+# UI Module - Agent management interface
+module "ui" {
+  count  = var.deploy_ui ? 1 : 0
+  source = "./modules/ui"
+
+  name = "agent-ui-tf"
+
+  runtime_arns = {
+    "DSP Agent" = module.dsp_agent.runtime_arn
+  }
+
+  ui_dist_path = "${path.root}/../ui/dist"
+
+  # Pass root-level Cognito resources (disable internal Cognito creation)
+  enable_auth               = true
+  cognito_user_pool_id      = aws_cognito_user_pool.main[0].id
+  cognito_user_pool_client_id = aws_cognito_user_pool_client.main[0].id
+
+  tags = merge(var.tags, {
+    Component = "ui"
+  })
+
+  depends_on = [module.dsp_agent]
+}
+
+# Update Cognito client callback URLs after CloudFront is created
+resource "null_resource" "update_cognito_callbacks" {
+  count = var.deploy_ui ? 1 : 0
+
+  triggers = {
+    cloudfront_domain = module.ui[0].cloudfront_domain_name
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      aws cognito-idp update-user-pool-client \
+        --user-pool-id ${aws_cognito_user_pool.main[0].id} \
+        --client-id ${aws_cognito_user_pool_client.main[0].id} \
+        --callback-urls "https://${module.ui[0].cloudfront_domain_name}" "https://${module.ui[0].cloudfront_domain_name}/auth/callback" \
+        --logout-urls "https://${module.ui[0].cloudfront_domain_name}" "https://${module.ui[0].cloudfront_domain_name}/logout" \
+        --allowed-o-auth-flows code implicit \
+        --allowed-o-auth-scopes email openid profile \
+        --allowed-o-auth-flows-user-pool-client \
+        --supported-identity-providers COGNITO
+    EOT
+  }
+
+  depends_on = [module.ui]
+}
+
+# Gateway Module - MCP Gateway with Lambda tools
+module "gateway" {
+  count  = var.deploy_gateway ? 1 : 0
+  source = "./modules/gateway"
+
+  name = "agentcore-mcp"
+
+  # Use root-level Cognito auth
+  cognito_user_pool_id = var.deploy_ui ? aws_cognito_user_pool.main[0].id : ""
+  cognito_client_ids   = var.deploy_ui ? [aws_cognito_user_pool_client.main[0].id] : []
+
+  tags = merge(var.tags, {
+    Component = "mcp-gateway"
+  })
+
+  depends_on = [module.ui]
+}
+
+# MCP Server Module - AgentCore Runtime for MCP Protocol
+# Disabled - using Lambda MCP server instead (simpler, already deployed)
+# module "mcp_server" {
+#   count  = var.deploy_mcp_server ? 1 : 0
+#   source = "./modules/mcp-server"
+#   ...
+# }

@@ -17,6 +17,21 @@ export interface AgentSession {
   status: "active" | "completed" | "error"
 }
 
+export interface ToolCall {
+  id: string
+  name: string
+  arguments: string
+  result?: string
+  status: "pending" | "running" | "completed" | "error"
+}
+
+// Segment for inline display of text and tool calls
+export interface ContentSegment {
+  type: "text" | "tool"
+  text?: string  // For text segments
+  toolCallId?: string  // For tool segments, references a ToolCall
+}
+
 export interface AgentMessage {
   id: string
   role: "user" | "assistant" | "system" | "tool"
@@ -24,6 +39,9 @@ export interface AgentMessage {
   timestamp: Date
   toolName?: string
   toolResult?: string
+  toolCalls?: ToolCall[]  // Tool call details
+  segments?: ContentSegment[]  // Ordered content segments (text + tools interleaved)
+  isStreaming?: boolean  // True when message is being streamed
 }
 
 export interface AgentMetrics {

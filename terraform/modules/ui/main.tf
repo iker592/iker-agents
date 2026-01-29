@@ -6,6 +6,16 @@ data "aws_region" "current" {}
 locals {
   account_id = data.aws_caller_identity.current.account_id
   region     = data.aws_region.current.id
+
+  # Cognito: Use external IDs if provided, otherwise use internally created ones
+  use_external_cognito = var.cognito_user_pool_id != "" && var.cognito_user_pool_client_id != ""
+}
+
+# Separate locals block for Cognito IDs that reference conditional resources
+# This avoids Terraform graph issues with conditional resource references
+locals {
+  cognito_pool_id   = local.use_external_cognito ? var.cognito_user_pool_id : try(aws_cognito_user_pool.pool[0].id, "")
+  cognito_client_id = local.use_external_cognito ? var.cognito_user_pool_client_id : try(aws_cognito_user_pool_client.client[0].id, "")
 }
 
 # S3 Bucket for static UI hosting
@@ -293,8 +303,9 @@ EOF
 }
 
 # Cognito User Pool for authentication
+# Only created if external Cognito IDs are NOT provided
 resource "aws_cognito_user_pool" "pool" {
-  count = var.enable_auth ? 1 : 0
+  count = var.enable_auth && !local.use_external_cognito ? 1 : 0
 
   name = "${var.name}-users"
 
@@ -343,7 +354,7 @@ resource "aws_cognito_user_pool" "pool" {
 }
 
 resource "aws_cognito_user_pool_client" "client" {
-  count = var.enable_auth ? 1 : 0
+  count = var.enable_auth && !local.use_external_cognito ? 1 : 0
 
   name         = "${var.name}-client"
   user_pool_id = aws_cognito_user_pool.pool[0].id
@@ -383,7 +394,7 @@ resource "aws_cognito_user_pool_client" "client" {
 }
 
 resource "aws_cognito_user_pool_domain" "domain" {
-  count = var.enable_auth ? 1 : 0
+  count = var.enable_auth && !local.use_external_cognito ? 1 : 0
 
   domain       = "${var.name}-${local.account_id}"
   user_pool_id = aws_cognito_user_pool.pool[0].id
@@ -420,8 +431,8 @@ resource "aws_apigatewayv2_authorizer" "jwt" {
   name             = "cognito-jwt"
 
   jwt_configuration {
-    audience = [aws_cognito_user_pool_client.client[0].id]
-    issuer   = "https://cognito-idp.${local.region}.amazonaws.com/${aws_cognito_user_pool.pool[0].id}"
+    audience = [local.cognito_client_id]
+    issuer   = "https://cognito-idp.${local.region}.amazonaws.com/${local.cognito_pool_id}"
   }
 }
 

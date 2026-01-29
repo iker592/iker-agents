@@ -55,34 +55,45 @@ output "ui_cloudfront_distribution_id" {
   value       = var.deploy_ui ? module.ui[0].cloudfront_distribution_id : null
 }
 
-# Auth outputs
+# Auth outputs (from root-level Cognito resources)
 output "cognito_user_pool_id" {
   description = "Cognito User Pool ID"
-  value       = var.deploy_ui ? module.ui[0].cognito_user_pool_id : null
+  value       = var.deploy_ui ? aws_cognito_user_pool.main[0].id : null
 }
 
 output "cognito_user_pool_client_id" {
   description = "Cognito User Pool Client ID"
-  value       = var.deploy_ui ? module.ui[0].cognito_user_pool_client_id : null
+  value       = var.deploy_ui ? aws_cognito_user_pool_client.main[0].id : null
 }
 
 output "cognito_domain" {
   description = "Cognito hosted UI domain for OAuth"
-  value       = var.deploy_ui ? module.ui[0].cognito_domain : null
+  value       = var.deploy_ui ? "https://${aws_cognito_user_pool_domain.main[0].domain}.auth.${local.region}.amazoncognito.com" : null
 }
 
-# MCP Server outputs
-output "mcp_lambda_url" {
-  description = "MCP Server Lambda Function URL (direct invocation)"
-  value       = var.deploy_gateway ? module.gateway[0].mcp_lambda_url : null
+# AgentCore direct access (for frontend streaming)
+output "agentcore_endpoint" {
+  description = "AgentCore service endpoint for direct browser-to-AgentCore streaming"
+  value       = "https://bedrock-agentcore.${local.region}.amazonaws.com"
+}
+
+# MCP Gateway outputs
+output "mcp_gateway_url" {
+  description = "MCP Gateway URL for client connections"
+  value       = var.deploy_gateway ? module.gateway[0].gateway_url : null
+}
+
+output "mcp_gateway_id" {
+  description = "MCP Gateway ID"
+  value       = var.deploy_gateway ? module.gateway[0].gateway_id : null
 }
 
 output "mcp_lambda_arn" {
-  description = "MCP Server Lambda ARN"
+  description = "MCP Lambda ARN"
   value       = var.deploy_gateway ? module.gateway[0].mcp_lambda_arn : null
 }
 
-output "mcp_lambda_function_name" {
-  description = "MCP Server Lambda function name"
-  value       = var.deploy_gateway ? module.gateway[0].mcp_lambda_function_name : null
-}
+# MCP Server Runtime outputs (disabled - using Lambda instead)
+# output "mcp_server_runtime_id" { ... }
+# output "mcp_server_runtime_arn" { ... }
+# output "mcp_server_url" { ... }

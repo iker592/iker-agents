@@ -38,17 +38,17 @@ output "lambda_function_name" {
 # Cognito outputs
 output "cognito_user_pool_id" {
   description = "Cognito User Pool ID"
-  value       = var.enable_auth ? aws_cognito_user_pool.pool[0].id : null
+  value       = var.enable_auth ? local.cognito_pool_id : null
 }
 
 output "cognito_user_pool_client_id" {
   description = "Cognito User Pool Client ID"
-  value       = var.enable_auth ? aws_cognito_user_pool_client.client[0].id : null
+  value       = var.enable_auth ? local.cognito_client_id : null
 }
 
 output "cognito_domain" {
   description = "Cognito hosted UI domain"
-  value       = var.enable_auth ? "https://${aws_cognito_user_pool_domain.domain[0].domain}.auth.${data.aws_region.current.id}.amazoncognito.com" : null
+  value       = var.enable_auth && !local.use_external_cognito ? "https://${aws_cognito_user_pool_domain.domain[0].domain}.auth.${data.aws_region.current.id}.amazoncognito.com" : null
 }
 
 output "auth_enabled" {

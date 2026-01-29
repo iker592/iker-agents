@@ -6,6 +6,234 @@ import { getAccessToken, isAuthConfigured } from './auth';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
+// Direct AgentCore connection (bypasses API Gateway 30s timeout)
+const AGENTCORE_ENDPOINT = import.meta.env.VITE_AGENTCORE_ENDPOINT || 'https://bedrock-agentcore.us-east-1.amazonaws.com';
+const RUNTIME_ARN = import.meta.env.VITE_RUNTIME_ARN || '';
+
+// ============================================================================
+// AG-UI Protocol Types (from agent-sdk/src/yahoo_dsp_agent_sdk/agui_bridge.py)
+// ============================================================================
+
+/**
+ * AG-UI event types - all events from ag_ui.core.events
+ */
+export type AGUIEventType =
+  | 'RUN_STARTED'          // Run begins - has thread_id, run_id
+  | 'RUN_FINISHED'         // Run completes - has thread_id, run_id
+  | 'RUN_ERROR'            // Error occurred - has message
+  | 'TEXT_MESSAGE_START'   // Text message begins - has message_id, role
+  | 'TEXT_MESSAGE_CONTENT' // Text delta (token streaming) - has message_id, delta
+  | 'TEXT_MESSAGE_END'     // Text message ends - has message_id
+  | 'TOOL_CALL_START'      // Tool call begins - has tool_call_id, tool_call_name
+  | 'TOOL_CALL_ARGS'       // Tool arguments delta - has tool_call_id, delta
+  | 'TOOL_CALL_RESULT'     // Tool result - has tool_call_id, content
+  | 'TOOL_CALL_END';       // Tool call ends - has tool_call_id
+
+/**
+ * AG-UI event structure
+ * Note: Backend sends camelCase fields, but we support both for compatibility
+ */
+export interface AGUIEvent {
+  type: AGUIEventType;
+  // Run events (camelCase from backend)
+  threadId?: string;
+  runId?: string;
+  // Legacy snake_case support
+  thread_id?: string;
+  run_id?: string;
+  // Message events (camelCase from backend)
+  messageId?: string;
+  role?: string;
+  delta?: string;          // For TEXT_MESSAGE_CONTENT and TOOL_CALL_ARGS
+  // Legacy snake_case support
+  message_id?: string;
+  // Tool events (camelCase from backend)
+  toolCallId?: string;
+  toolCallName?: string;
+  parentMessageId?: string;
+  content?: string;        // For TOOL_CALL_RESULT
+  // Legacy snake_case support
+  tool_call_id?: string;
+  tool_call_name?: string;
+  parent_message_id?: string;
+  // Error
+  message?: string;        // For RUN_ERROR
+}
+
+/**
+ * Callbacks for streaming AG-UI events
+ */
+export interface StreamCallbacks {
+  // Run lifecycle
+  onRunStart?: (threadId: string, runId: string) => void;
+  onRunFinish?: () => void;
+  onError?: (error: string) => void;
+  // Text streaming (token by token from LLM)
+  onMessageStart?: (messageId: string) => void;
+  onTextDelta: (delta: string) => void;  // Main streaming event - LLM tokens
+  onMessageEnd?: () => void;
+  // Tool calls
+  onToolStart?: (toolName: string, toolCallId: string) => void;
+  onToolArgsDelta?: (delta: string) => void;  // Streaming tool arguments
+  onToolResult?: (result: string) => void;
+  onToolEnd?: () => void;
+}
+
+/**
+ * Check if direct AgentCore invocation is configured
+ */
+export function isDirectAgentCoreConfigured(): boolean {
+  return !!(RUNTIME_ARN && isAuthConfigured());
+}
+
+/**
+ * Invoke agent directly via AgentCore with AG-UI streaming
+ * Bypasses API Gateway 30s timeout - supports responses up to 5 minutes
+ */
+export async function invokeAgentDirect(
+  input: string,
+  sessionId: string,
+  callbacks: StreamCallbacks
+): Promise<void> {
+  if (!RUNTIME_ARN) {
+    throw new Error('VITE_RUNTIME_ARN not configured');
+  }
+
+  const token = await getAccessToken();
+  if (!token) {
+    throw new Error('Not authenticated');
+  }
+
+  const escapedArn = encodeURIComponent(RUNTIME_ARN);
+
+  const response = await fetch(
+    `${AGENTCORE_ENDPOINT}/runtimes/${escapedArn}/invocations?qualifier=DEFAULT`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'X-Amzn-Bedrock-AgentCore-Runtime-Session-Id': sessionId,
+      },
+      // Use stream_agui for AG-UI protocol (structured events)
+      body: JSON.stringify({ input, stream_agui: true }),
+    }
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`AgentCore error (${response.status}): ${errorText}`);
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) {
+    throw new Error('No response body');
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      // Process complete SSE events (separated by double newlines)
+      const events = buffer.split('\n\n');
+      buffer = events.pop() || ''; // Keep incomplete event in buffer
+
+      for (const eventStr of events) {
+        if (!eventStr.trim()) continue;
+
+        // Parse SSE format: "data: {...}"
+        const dataMatch = eventStr.match(/^data:\s*(.+)$/m);
+        if (!dataMatch) continue;
+
+        try {
+          const event: AGUIEvent = JSON.parse(dataMatch[1]);
+          handleAGUIEvent(event, callbacks);
+        } catch (parseError) {
+          console.warn('Failed to parse AG-UI event:', dataMatch[1]);
+        }
+      }
+    }
+
+    // Process any remaining data in buffer
+    if (buffer.trim()) {
+      const dataMatch = buffer.match(/^data:\s*(.+)$/m);
+      if (dataMatch) {
+        try {
+          const event: AGUIEvent = JSON.parse(dataMatch[1]);
+          handleAGUIEvent(event, callbacks);
+        } catch {
+          // Ignore incomplete events at end
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+/**
+ * Handle individual AG-UI events
+ */
+function handleAGUIEvent(event: AGUIEvent, callbacks: StreamCallbacks): void {
+  // Debug logging for all events
+  console.debug('[AG-UI Event]', event.type, event);
+
+  switch (event.type) {
+    // Run lifecycle
+    case 'RUN_STARTED':
+      // Prefer camelCase (from backend), fallback to snake_case
+      callbacks.onRunStart?.(event.threadId || event.thread_id || '', event.runId || event.run_id || '');
+      break;
+    case 'RUN_FINISHED':
+      callbacks.onRunFinish?.();
+      break;
+    case 'RUN_ERROR':
+      callbacks.onError?.(event.message || 'Unknown error');
+      break;
+
+    // Text streaming (token by token from LLM)
+    case 'TEXT_MESSAGE_START':
+      callbacks.onMessageStart?.(event.messageId || event.message_id || '');
+      break;
+    case 'TEXT_MESSAGE_CONTENT':
+      if (event.delta) {
+        callbacks.onTextDelta(event.delta);
+      }
+      break;
+    case 'TEXT_MESSAGE_END':
+      callbacks.onMessageEnd?.();
+      break;
+
+    // Tool calls
+    case 'TOOL_CALL_START':
+      // Prefer camelCase (toolCallName from backend), fallback to snake_case
+      const toolName = event.toolCallName || event.tool_call_name || 'unknown tool';
+      const toolCallId = event.toolCallId || event.tool_call_id || '';
+      console.log('[AG-UI] Tool call started:', toolName, 'id:', toolCallId);
+      callbacks.onToolStart?.(toolName, toolCallId);
+      break;
+    case 'TOOL_CALL_ARGS':
+      if (event.delta) {
+        callbacks.onToolArgsDelta?.(event.delta);
+      }
+      break;
+    case 'TOOL_CALL_RESULT':
+      console.log('[AG-UI] Tool call result:', event.content?.substring(0, 100));
+      callbacks.onToolResult?.(event.content || '');
+      break;
+    case 'TOOL_CALL_END':
+      console.log('[AG-UI] Tool call ended');
+      callbacks.onToolEnd?.();
+      break;
+  }
+}
+
 export interface Agent {
   id: string;
   name: string;

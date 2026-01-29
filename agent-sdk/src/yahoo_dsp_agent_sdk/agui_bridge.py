@@ -93,6 +93,28 @@ class StrandsToAGUIBridge:
         if not isinstance(strands_event, dict):
             return agui_events
 
+        # Handle Strands ToolResultEvent (type: "tool_result")
+        # This event comes AFTER the tool executes with the actual result
+        if strands_event.get("type") == "tool_result":
+            tool_result_data = strands_event.get("tool_result", {})
+            content_list = tool_result_data.get("content", [])
+            # Extract text from content list
+            result_text = ""
+            for item in content_list:
+                if isinstance(item, dict):
+                    if "text" in item:
+                        result_text = item["text"]
+                        break
+                    elif "json" in item:
+                        result_text = json.dumps(item["json"])
+                        break
+            if not result_text and content_list:
+                result_text = json.dumps(content_list)
+            # Now emit the tool result and end events
+            if self.current_tool_call_id:
+                agui_events.extend(self.end_tool_call(result_text or "Tool executed successfully"))
+            return agui_events
+
         if "data" in strands_event and "delta" in strands_event:
             agui_events.append(self.add_text_content(str(strands_event["data"])))
         elif "event" in strands_event:
@@ -107,8 +129,12 @@ class StrandsToAGUIBridge:
                     tool_input = delta_data["delta"]["toolUse"]["input"]
                     if self.current_tool_call_id and tool_input:
                         agui_events.append(self.add_tool_args(str(tool_input)))
-            elif "contentBlockStop" in event_data and self.current_tool_call_id:
-                agui_events.extend(self.end_tool_call())
+            elif "contentBlockStop" in event_data:
+                # End the tool call when the content block completes
+                # Note: Strands' ToolResultEvent has is_callback_event=False,
+                # so it's not yielded through stream_async. We end the tool here.
+                if self.current_tool_call_id:
+                    agui_events.extend(self.end_tool_call("Completed"))
 
         return agui_events
 

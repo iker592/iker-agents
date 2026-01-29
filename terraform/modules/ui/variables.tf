@@ -29,6 +29,18 @@ variable "enable_auth" {
   default     = true
 }
 
+variable "cognito_user_pool_id" {
+  description = "External Cognito User Pool ID (if provided, skips internal Cognito creation)"
+  type        = string
+  default     = ""
+}
+
+variable "cognito_user_pool_client_id" {
+  description = "External Cognito User Pool Client ID (if provided, skips internal Cognito creation)"
+  type        = string
+  default     = ""
+}
+
 variable "callback_urls" {
   description = "OAuth callback URLs for Cognito"
   type        = list(string)

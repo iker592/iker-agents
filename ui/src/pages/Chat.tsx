@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useRef, useCallback } from "react"
 import { useSearchParams } from "react-router-dom"
 import { Bot, Plus, ChevronDown, Check } from "lucide-react"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
@@ -6,9 +6,20 @@ import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { ChatInterface } from "@/components/agents/ChatInterface"
 import { useAgents } from "@/hooks/useAgents"
-import { invokeAgent, generateSessionId, saveSession, loadSessionMessages, saveMessages, getAgentSessions, type StoredMessage, type StoredSession } from "@/services/api"
+import {
+  invokeAgent,
+  invokeAgentDirect,
+  isDirectAgentCoreConfigured,
+  generateSessionId,
+  saveSession,
+  loadSessionMessages,
+  saveMessages,
+  getAgentSessions,
+  type StoredMessage,
+  type StoredSession
+} from "@/services/api"
 import { cn } from "@/lib/utils"
-import type { AgentMessage } from "@/types/agent"
+import type { AgentMessage, ToolCall, ContentSegment } from "@/types/agent"
 
 const typeColors = {
   research: "bg-blue-500/10 text-blue-500",
@@ -24,11 +35,37 @@ export function Chat() {
   const [currentSessionId, setCurrentSessionId] = useState<string>("")
   const [isProcessing, setIsProcessing] = useState(false)
 
+  // Streaming state
+  const [streamingContent, setStreamingContent] = useState<string>("")
+  const [currentTool, setCurrentTool] = useState<string | null>(null)
+  const [toolCalls, setToolCalls] = useState<ToolCall[]>([])  // Track all tool calls with details
+  const [segments, setSegments] = useState<ContentSegment[]>([])  // Ordered segments
+  const streamingContentRef = useRef<string>("")  // Ref for closure in callbacks
+  const toolCallsRef = useRef<ToolCall[]>([])  // Ref for tool calls in callbacks
+  const segmentsRef = useRef<ContentSegment[]>([])  // Ref for segments in callbacks
+  const currentToolIdRef = useRef<string>("")  // Track current tool call id
+
   // Store messages by sessionId
   const [sessionMessages, setSessionMessages] = useState<Record<string, AgentMessage[]>>({})
 
-  // Current session's messages
-  const messages = sessionMessages[currentSessionId] || []
+  // Current session's messages (include streaming message if active)
+  const baseMessages = sessionMessages[currentSessionId] || []
+  const messages = useMemo(() => {
+    if (streamingContent || currentTool || toolCalls.length > 0 || segments.length > 0) {
+      const streamingMessage: AgentMessage = {
+        id: `msg-streaming`,
+        role: "assistant",
+        content: streamingContent,
+        timestamp: new Date(),
+        isStreaming: true,
+        toolName: currentTool || undefined,
+        toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+        segments: segments.length > 0 ? segments : undefined,
+      }
+      return [...baseMessages, streamingMessage]
+    }
+    return baseMessages
+  }, [baseMessages, streamingContent, currentTool, toolCalls, segments])
 
   // Load or create session when agent or session param changes
   useEffect(() => {
@@ -162,7 +199,7 @@ export function Chat() {
 
   const selectedAgent = uiAgents.find((a) => a.id === selectedAgentId)
 
-  const handleSendMessage = async (content: string) => {
+  const handleSendMessage = useCallback(async (content: string) => {
     if (!selectedAgentId || isProcessing || !currentSessionId) return
 
     const newMessage: AgentMessage = {
@@ -180,26 +217,179 @@ export function Chat() {
 
     setIsProcessing(true)
 
+    // Reset streaming state
+    setStreamingContent("")
+    setCurrentTool(null)
+    setToolCalls([])
+    setSegments([])
+    streamingContentRef.current = ""
+    toolCallsRef.current = []
+    segmentsRef.current = []
+    currentToolIdRef.current = ""
+
     try {
-      // Call agent API
-      const response = await invokeAgent({
-        agent_id: selectedAgentId,
-        input: content,
-        session_id: currentSessionId,
-      })
+      // Use direct AgentCore streaming if configured (bypasses API Gateway 30s timeout)
+      if (isDirectAgentCoreConfigured()) {
+        await invokeAgentDirect(content, currentSessionId, {
+          // Text streaming - shows LLM tokens as they arrive
+          onTextDelta: (delta) => {
+            streamingContentRef.current += delta
+            setStreamingContent(streamingContentRef.current)
 
-      // Add agent response
-      const agentMessage: AgentMessage = {
-        id: `msg-${Date.now()}-response`,
-        role: "assistant",
-        content: response.output,
-        timestamp: new Date(),
+            // Update segments: append to last text segment or create new one
+            const lastSegment = segmentsRef.current[segmentsRef.current.length - 1]
+            if (lastSegment && lastSegment.type === 'text') {
+              lastSegment.text = (lastSegment.text || '') + delta
+              setSegments([...segmentsRef.current])
+            } else {
+              // Create new text segment
+              segmentsRef.current = [...segmentsRef.current, { type: 'text', text: delta }]
+              setSegments([...segmentsRef.current])
+            }
+          },
+
+          // Tool calls - track with arguments and results
+          onToolStart: (toolName, toolCallId) => {
+            console.log('[Chat] Tool started:', toolName, toolCallId)
+            setCurrentTool(toolName)
+            currentToolIdRef.current = toolCallId
+
+            // Add new tool call to list
+            const newToolCall: ToolCall = {
+              id: toolCallId,
+              name: toolName,
+              arguments: "",
+              status: "running",
+            }
+            toolCallsRef.current = [...toolCallsRef.current, newToolCall]
+            setToolCalls([...toolCallsRef.current])
+
+            // Add tool segment to track position in content flow
+            segmentsRef.current = [...segmentsRef.current, { type: 'tool', toolCallId }]
+            setSegments([...segmentsRef.current])
+          },
+
+          onToolArgsDelta: (delta) => {
+            // Stream tool arguments
+            if (currentToolIdRef.current) {
+              const toolIndex = toolCallsRef.current.findIndex(
+                t => t.id === currentToolIdRef.current
+              )
+              if (toolIndex >= 0) {
+                toolCallsRef.current[toolIndex].arguments += delta
+                setToolCalls([...toolCallsRef.current])
+              }
+            }
+          },
+
+          onToolResult: (result) => {
+            console.log('[Chat] Tool result received')
+            // Update the current tool call with result
+            if (currentToolIdRef.current) {
+              const toolIndex = toolCallsRef.current.findIndex(
+                t => t.id === currentToolIdRef.current
+              )
+              if (toolIndex >= 0) {
+                toolCallsRef.current[toolIndex].result = result
+                setToolCalls([...toolCallsRef.current])
+              }
+            }
+          },
+
+          onToolEnd: () => {
+            console.log('[Chat] Tool ended')
+            // Mark the tool call as completed
+            if (currentToolIdRef.current) {
+              const toolIndex = toolCallsRef.current.findIndex(
+                t => t.id === currentToolIdRef.current
+              )
+              if (toolIndex >= 0) {
+                toolCallsRef.current[toolIndex].status = "completed"
+                setToolCalls([...toolCallsRef.current])
+              }
+            }
+            setCurrentTool(null)
+            currentToolIdRef.current = ""
+          },
+
+          // Run lifecycle
+          onRunStart: (threadId, runId) => {
+            console.log('[Chat] Run started:', { threadId, runId })
+          },
+          onRunFinish: () => {
+            console.log('[Chat] Run finished')
+            // Add final message when streaming completes
+            const agentMessage: AgentMessage = {
+              id: `msg-${Date.now()}-response`,
+              role: "assistant",
+              content: streamingContentRef.current,
+              timestamp: new Date(),
+              toolCalls: toolCallsRef.current.length > 0 ? [...toolCallsRef.current] : undefined,
+              segments: segmentsRef.current.length > 0 ? [...segmentsRef.current] : undefined,
+            }
+
+            setSessionMessages(prev => ({
+              ...prev,
+              [currentSessionId]: [...(prev[currentSessionId] || []), agentMessage]
+            }))
+
+            // Clear streaming state
+            setStreamingContent("")
+            setCurrentTool(null)
+            setToolCalls([])
+            setSegments([])
+            streamingContentRef.current = ""
+            toolCallsRef.current = []
+            segmentsRef.current = []
+            currentToolIdRef.current = ""
+          },
+
+          onError: (errorMsg) => {
+            console.error('[Chat] Error:', errorMsg)
+            const errorMessage: AgentMessage = {
+              id: `msg-${Date.now()}-error`,
+              role: "assistant",
+              content: `Error: ${errorMsg}`,
+              timestamp: new Date(),
+            }
+
+            setSessionMessages(prev => ({
+              ...prev,
+              [currentSessionId]: [...(prev[currentSessionId] || []), errorMessage]
+            }))
+
+            // Clear streaming state
+            setStreamingContent("")
+            setCurrentTool(null)
+            setToolCalls([])
+            setSegments([])
+            streamingContentRef.current = ""
+            toolCallsRef.current = []
+            segmentsRef.current = []
+            currentToolIdRef.current = ""
+          },
+        })
+      } else {
+        // Fallback to Lambda proxy (limited to 30s timeout)
+        const response = await invokeAgent({
+          agent_id: selectedAgentId,
+          input: content,
+          session_id: currentSessionId,
+        })
+
+        // Add agent response
+        const agentMessage: AgentMessage = {
+          id: `msg-${Date.now()}-response`,
+          role: "assistant",
+          content: response.output,
+          timestamp: new Date(),
+        }
+
+        setSessionMessages(prev => ({
+          ...prev,
+          [currentSessionId]: [...(prev[currentSessionId] || []), agentMessage]
+        }))
       }
-
-      setSessionMessages(prev => ({
-        ...prev,
-        [currentSessionId]: [...(prev[currentSessionId] || []), agentMessage]
-      }))
     } catch (err) {
       const errorMessage: AgentMessage = {
         id: `msg-${Date.now()}-error`,
@@ -212,10 +402,20 @@ export function Chat() {
         ...prev,
         [currentSessionId]: [...(prev[currentSessionId] || []), errorMessage]
       }))
+
+      // Clear streaming state on error
+      setStreamingContent("")
+      setCurrentTool(null)
+      setToolCalls([])
+      setSegments([])
+      streamingContentRef.current = ""
+      toolCallsRef.current = []
+      segmentsRef.current = []
+      currentToolIdRef.current = ""
     } finally {
       setIsProcessing(false)
     }
-  }
+  }, [selectedAgentId, isProcessing, currentSessionId])
 
   if (loading) {
     return (

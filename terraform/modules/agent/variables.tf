@@ -47,3 +47,16 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+# JWT Authentication (optional)
+variable "cognito_user_pool_id" {
+  description = "Cognito User Pool ID for JWT authentication (enables direct browser-to-AgentCore streaming)"
+  type        = string
+  default     = ""
+}
+
+variable "cognito_client_ids" {
+  description = "Allowed Cognito client IDs for JWT authentication"
+  type        = list(string)
+  default     = []
+}

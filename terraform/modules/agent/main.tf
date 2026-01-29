@@ -22,6 +22,17 @@ resource "aws_bedrockagentcore_agent_runtime" "this" {
     }
   }
 
+  # JWT Authorization - enables direct browser-to-AgentCore streaming (bypasses API Gateway 30s timeout)
+  dynamic "authorizer_configuration" {
+    for_each = var.cognito_user_pool_id != "" ? [1] : []
+    content {
+      custom_jwt_authorizer {
+        discovery_url   = "https://cognito-idp.${local.region}.amazonaws.com/${var.cognito_user_pool_id}/.well-known/openid-configuration"
+        allowed_clients = var.cognito_client_ids
+      }
+    }
+  }
+
   environment_variables = merge(
     {
       AWS_REGION = local.region

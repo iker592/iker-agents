@@ -159,3 +159,20 @@ resource "aws_iam_role_policy" "memory_access" {
   role   = aws_iam_role.runtime.id
   policy = data.aws_iam_policy_document.memory_access.json
 }
+
+# Policy for Lambda invocation (for MCP tools)
+data "aws_iam_policy_document" "lambda_invoke" {
+  statement {
+    effect = "Allow"
+    actions = [
+      "lambda:InvokeFunction"
+    ]
+    resources = ["arn:aws:lambda:${local.region}:${local.account_id}:function:agentcore-mcp-*"]
+  }
+}
+
+resource "aws_iam_role_policy" "lambda_invoke" {
+  name   = "lambda-invoke"
+  role   = aws_iam_role.runtime.id
+  policy = data.aws_iam_policy_document.lambda_invoke.json
+}

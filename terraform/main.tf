@@ -263,8 +263,8 @@ module "mcp_server" {
   count  = var.deploy_mcp_server ? 1 : 0
   source = "./modules/mcp-server"
 
-  name          = "agentcore-mcp"
-  runtime_name  = "mcp-server-tf"
+  name          = "agentcore_mcp"
+  runtime_name  = "mcp_server_tf"
   endpoint_name = "default"
   ecr_image_uri = "${aws_ecr_repository.mcp_server.repository_url}:${var.mcp_server_image_tag}"
   instructions  = "Business tools MCP server with customer, order, and analytics data"

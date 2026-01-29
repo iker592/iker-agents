@@ -83,21 +83,16 @@ resource "aws_iam_role_policy" "runtime_execution" {
 
 resource "aws_bedrockagentcore_agent_runtime" "mcp_server" {
   agent_runtime_name = var.runtime_name
+  description        = var.instructions
   role_arn           = aws_iam_role.runtime.arn
 
   network_configuration {
     network_mode = "PUBLIC"
   }
 
-  runtime_artifacts {
-    container {
+  agent_runtime_artifact {
+    container_configuration {
       container_uri = var.ecr_image_uri
-    }
-  }
-
-  protocol_configuration {
-    mcp {
-      instructions = var.instructions
     }
   }
 
@@ -116,10 +111,10 @@ resource "aws_bedrockagentcore_agent_runtime" "mcp_server" {
 }
 
 # Runtime Endpoint
-resource "aws_bedrockagentcore_runtime_endpoint" "mcp_server" {
-  runtime_endpoint_name = var.endpoint_name
-  runtime_id            = aws_bedrockagentcore_agent_runtime.mcp_server.agent_runtime_id
-  description           = "MCP Server endpoint"
+resource "aws_bedrockagentcore_agent_runtime_endpoint" "mcp_server" {
+  agent_runtime_id = aws_bedrockagentcore_agent_runtime.mcp_server.agent_runtime_id
+  name             = var.endpoint_name
+  description      = "MCP Server endpoint"
 
   tags = var.tags
 }

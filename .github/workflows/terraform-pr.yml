@@ -175,7 +175,10 @@ jobs:
         id: plan
         working-directory: terraform
         run: |
-          terraform plan -no-color -var="image_tag=${{ steps.image.outputs.tag }}" -out=tfplan 2>&1 | tee plan_output.txt
+          terraform plan -no-color \
+            -var="image_tag=${{ steps.image.outputs.tag }}" \
+            -var="mcp_server_image_tag=${{ steps.image.outputs.tag }}" \
+            -out=tfplan 2>&1 | tee plan_output.txt
 
       - name: Comment Plan on PR
         uses: actions/github-script@v7

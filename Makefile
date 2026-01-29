@@ -105,10 +105,10 @@ test-unit:
 	uv run pytest -m unit
 
 test-e2e: aws-auth
-	$(eval ARN := $(shell cat cdk-outputs.json 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['DSPAgentStack']['RuntimeArn'])" 2>/dev/null || echo ""))
-	$(eval ENDPOINT := $(or $(ENDPOINT),DEFAULT))
+	$(eval ARN := $(or $(AGENT_RUNTIME_ARN),$(shell cat cdk-outputs.json 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['DSPAgentStack']['RuntimeArn'])" 2>/dev/null || echo "")))
+	$(eval ENDPOINT := $(or $(AGENT_ENDPOINT),$(ENDPOINT),dev))
 	@if [ -z "$(ARN)" ]; then \
-		echo "Error: No deployment found. Run 'make deploy' first."; \
+		echo "Error: No deployment found. Set AGENT_RUNTIME_ARN or run 'make deploy' first."; \
 		exit 1; \
 	fi
 	AGENT_RUNTIME_ARN=$(ARN) AGENT_ENDPOINT=$(ENDPOINT) uv run pytest -m e2e
@@ -316,7 +316,24 @@ invoke-agui: aws-auth
 
 chat:
 	@echo "Starting interactive chat (make sure local server is running with 'make local')"
-	uv run python -m yahoo_dsp_agent_sdk.chat --endpoint=invocations --url=http://localhost:8080 --default
+	uv run python -m yahoo_dsp_agent_sdk.chat --endpoint=invocations --url=http://localhost:8080 --mode=agui --default
+
+chat-aws: aws-auth
+	@if [ -z "$(STACK)" ]; then \
+		echo "Usage: make chat-aws STACK=<stack> [ENDPOINT=dev|canary|prod] [SESSION_ID=<id>] [USER_ID=<id>]"; \
+		echo "  STACK options: DSPAgentStack (default), ResearchAgentStack, CodingAgentStack"; \
+		echo "  ENDPOINT: dev (default), canary, prod, or DEFAULT for no endpoint"; \
+		exit 1; \
+	fi
+	$(eval ENDPOINT := $(or $(ENDPOINT),dev))
+	$(eval STACK := $(or $(STACK),DSPAgentStack))
+	$(eval ARN := $(shell cat cdk-outputs.json 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['$(STACK)']['RuntimeArn'])" 2>/dev/null || echo ""))
+	@if [ -z "$(ARN)" ]; then \
+		echo "Error: No deployment found for $(STACK). Run 'make deploy-all' first."; \
+		exit 1; \
+	fi
+	@echo "Starting interactive chat with $(STACK) on $(ENDPOINT) endpoint..."
+	uv run python -m yahoo_dsp_agent_sdk.chat --runtime-arn=$(ARN) --aws-endpoint=$(ENDPOINT) --aws-region=us-east-1 --mode=agui $(if $(SESSION_ID),--session-id=$(SESSION_ID),) $(if $(USER_ID),--user-id=$(USER_ID),) --default
 
 clean:
 	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true

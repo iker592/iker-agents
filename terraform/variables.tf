@@ -36,3 +36,9 @@ variable "deploy_ui" {
   type        = bool
   default     = true
 }
+
+variable "deploy_gateway" {
+  description = "Whether to deploy the MCP Gateway with demo tools"
+  type        = bool
+  default     = true
+}

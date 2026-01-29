@@ -70,3 +70,19 @@ output "cognito_domain" {
   description = "Cognito hosted UI domain for OAuth"
   value       = var.deploy_ui ? module.ui[0].cognito_domain : null
 }
+
+# MCP Server outputs
+output "mcp_lambda_url" {
+  description = "MCP Server Lambda Function URL (direct invocation)"
+  value       = var.deploy_gateway ? module.gateway[0].mcp_lambda_url : null
+}
+
+output "mcp_lambda_arn" {
+  description = "MCP Server Lambda ARN"
+  value       = var.deploy_gateway ? module.gateway[0].mcp_lambda_arn : null
+}
+
+output "mcp_lambda_function_name" {
+  description = "MCP Server Lambda function name"
+  value       = var.deploy_gateway ? module.gateway[0].mcp_lambda_function_name : null
+}

@@ -104,3 +104,15 @@ module "ui" {
 
   depends_on = [module.dsp_agent]
 }
+
+# Gateway Module - MCP Server with demo tools
+module "gateway" {
+  count  = var.deploy_gateway ? 1 : 0
+  source = "./modules/gateway"
+
+  name = "agentcore-mcp"
+
+  tags = merge(var.tags, {
+    Component = "mcp-server"
+  })
+}

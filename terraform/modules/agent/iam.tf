@@ -179,7 +179,7 @@ resource "aws_iam_role_policy" "lambda_invoke" {
 
 # Policy for MCP Server invocation (AgentCore Runtime)
 resource "aws_iam_role_policy" "invoke_mcp_server" {
-  count  = var.mcp_server_arn != "" ? 1 : 0
+  count  = var.enable_mcp_server ? 1 : 0
   name   = "invoke-mcp-server"
   role   = aws_iam_role.runtime.id
 

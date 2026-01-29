@@ -67,3 +67,9 @@ variable "mcp_server_arn" {
   type        = string
   default     = ""
 }
+
+variable "enable_mcp_server" {
+  description = "Whether to enable MCP server integration (used for IAM policy creation)"
+  type        = bool
+  default     = false
+}

@@ -124,7 +124,8 @@ module "dsp_agent" {
   cognito_client_ids   = var.deploy_ui ? [aws_cognito_user_pool_client.main[0].id] : []
 
   # MCP Server integration - agent invokes MCP server via AgentCore protocol
-  mcp_server_arn = var.deploy_mcp_server ? module.mcp_server[0].runtime_arn : ""
+  enable_mcp_server = var.deploy_mcp_server
+  mcp_server_arn    = var.deploy_mcp_server ? module.mcp_server[0].runtime_arn : ""
 
   tags = merge(var.tags, {
     Agent = "dsp-agent-tf"

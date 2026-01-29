@@ -27,6 +27,8 @@ class StrandsToAGUIBridge:
         self.current_tool_call_id = None
         self.tool_args_buffer = ""
         self.tool_name = None
+        # Map toolUseId -> our internal tool_call_id for matching tool results
+        self.pending_tool_calls: Dict[str, str] = {}
 
     def start_run(self, thread_id: str, run_id: str) -> RunStartedEvent:
         return RunStartedEvent(type=EventType.RUN_STARTED, thread_id=thread_id, run_id=run_id)
@@ -93,27 +95,44 @@ class StrandsToAGUIBridge:
         if not isinstance(strands_event, dict):
             return agui_events
 
-        # Handle Strands ToolResultEvent (type: "tool_result")
-        # This event comes AFTER the tool executes with the actual result
-        if strands_event.get("type") == "tool_result":
-            tool_result_data = strands_event.get("tool_result", {})
-            content_list = tool_result_data.get("content", [])
-            # Extract text from content list
-            result_text = ""
-            for item in content_list:
-                if isinstance(item, dict):
-                    if "text" in item:
-                        result_text = item["text"]
-                        break
-                    elif "json" in item:
-                        result_text = json.dumps(item["json"])
-                        break
-            if not result_text and content_list:
-                result_text = json.dumps(content_list)
-            # Now emit the tool result and end events
-            if self.current_tool_call_id:
-                agui_events.extend(self.end_tool_call(result_text or "Tool executed successfully"))
-            return agui_events
+        # Debug: log event keys to understand structure
+        # import logging
+        # logging.debug(f"Strands event keys: {list(strands_event.keys())}")
+
+        # Handle message events containing tool results
+        # Tool results come in 'message' events with role='user' containing 'toolResult'
+        if "message" in strands_event:
+            message = strands_event["message"]
+            if message.get("role") == "user":
+                content = message.get("content", [])
+                for item in content:
+                    if isinstance(item, dict) and "toolResult" in item:
+                        tool_result = item["toolResult"]
+                        tool_use_id = tool_result.get("toolUseId")
+                        # Find our internal tool_call_id for this toolUseId
+                        if tool_use_id and tool_use_id in self.pending_tool_calls:
+                            internal_id = self.pending_tool_calls.pop(tool_use_id)
+                            # Extract result text
+                            result_content = tool_result.get("content", [])
+                            result_text = ""
+                            for rc in result_content:
+                                if isinstance(rc, dict):
+                                    if "text" in rc:
+                                        result_text = rc["text"]
+                                        break
+                                    elif "json" in rc:
+                                        result_text = json.dumps(rc["json"])
+                                        break
+                            if not result_text and result_content:
+                                result_text = json.dumps(result_content)
+                            # Emit the tool result and end events
+                            self.current_tool_call_id = internal_id
+                            agui_events.extend(
+                                self.end_tool_call(result_text or "Tool executed successfully")
+                            )
+                # Only return early for user messages (tool results)
+                return agui_events
+            # Don't return early for assistant messages - let them fall through
 
         if "data" in strands_event and "delta" in strands_event:
             agui_events.append(self.add_text_content(str(strands_event["data"])))
@@ -122,19 +141,20 @@ class StrandsToAGUIBridge:
             if "contentBlockStart" in event_data:
                 start_data = event_data["contentBlockStart"]["start"]
                 if "toolUse" in start_data:
-                    agui_events.append(self.start_tool_call(start_data["toolUse"]["name"]))
+                    tool_use = start_data["toolUse"]
+                    tool_use_id = tool_use.get("toolUseId")
+                    agui_events.append(self.start_tool_call(tool_use["name"]))
+                    # Store mapping from Strands toolUseId to our internal id
+                    if tool_use_id and self.current_tool_call_id:
+                        self.pending_tool_calls[tool_use_id] = self.current_tool_call_id
             elif "contentBlockDelta" in event_data:
                 delta_data = event_data["contentBlockDelta"]
                 if "delta" in delta_data and "toolUse" in delta_data["delta"]:
                     tool_input = delta_data["delta"]["toolUse"]["input"]
                     if self.current_tool_call_id and tool_input:
                         agui_events.append(self.add_tool_args(str(tool_input)))
-            elif "contentBlockStop" in event_data:
-                # End the tool call when the content block completes
-                # Note: Strands' ToolResultEvent has is_callback_event=False,
-                # so it's not yielded through stream_async. We end the tool here.
-                if self.current_tool_call_id:
-                    agui_events.extend(self.end_tool_call("Completed"))
+            # Note: We don't emit end_tool_call on contentBlockStop
+            # The tool result comes later in a 'message' event with role='user'
 
         return agui_events
 

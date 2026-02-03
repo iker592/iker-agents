@@ -57,7 +57,10 @@ def call_mcp_tool(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     event_stream = response.get("response")
     if event_stream:
         for event in event_stream:
-            if "chunk" in event:
+            # Handle both bytes and dict formats
+            if isinstance(event, bytes):
+                result_bytes += event
+            elif isinstance(event, dict) and "chunk" in event:
                 result_bytes += event["chunk"].get("bytes", b"")
 
     if not result_bytes:

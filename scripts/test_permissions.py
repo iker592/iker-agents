@@ -7,7 +7,7 @@ Usage:
     python scripts/test_permissions.py --role coding-agent-tf-runtime-role
 
     # Test specific permission
-    python scripts/test_permissions.py --role coding-agent-tf-runtime-role --test code-interpreter
+    python scripts/test_permissions.py -r my-agent-role -t code-interpreter
 
     # List available tests
     python scripts/test_permissions.py --list
@@ -22,7 +22,9 @@ import boto3
 from botocore.exceptions import ClientError
 
 
-def get_assumed_role_session(role_name: str, region: str = "us-east-1") -> boto3.Session:
+def get_assumed_role_session(
+    role_name: str, region: str = "us-east-1"
+) -> boto3.Session:
     """Assume a role and return a session with temporary credentials."""
     sts = boto3.client("sts", region_name=region)
     account_id = sts.get_caller_identity()["Account"]
@@ -69,7 +71,8 @@ def test_code_interpreter(session: boto3.Session, region: str) -> list[dict]:
             codeInterpreterIdentifier="aws.codeinterpreter.v1",
         )
         session_id = response.get("sessionId", "unknown")
-        results.append(test_result("StartCodeInterpreterSession", True, f"Session: {session_id}"))
+        msg = f"Session: {session_id}"
+        results.append(test_result("StartCodeInterpreterSession", True, msg))
 
         # Try to stop it
         try:
@@ -83,7 +86,8 @@ def test_code_interpreter(session: boto3.Session, region: str) -> list[dict]:
             if code == "AccessDeniedException":
                 results.append(test_result("StopCodeInterpreterSession", False, str(e)))
             else:
-                results.append(test_result("StopCodeInterpreterSession", True, f"Got {code} (not access denied)"))
+                msg = f"Got {code} (not access denied)"
+            results.append(test_result("StopCodeInterpreterSession", True, msg))
 
     except ClientError as e:
         code = e.response["Error"]["Code"]
@@ -91,12 +95,15 @@ def test_code_interpreter(session: boto3.Session, region: str) -> list[dict]:
             results.append(test_result("StartCodeInterpreterSession", False, str(e)))
         else:
             # Other errors (ValidationException, etc.) mean we have permission
-            results.append(test_result("StartCodeInterpreterSession", True, f"Got {code} (not access denied)"))
+            msg = f"Got {code} (not access denied)"
+            results.append(test_result("StartCodeInterpreterSession", True, msg))
 
     return results
 
 
-def test_mcp_server(session: boto3.Session, region: str, mcp_server_arn: str | None = None) -> list[dict]:
+def test_mcp_server(
+    session: boto3.Session, region: str, mcp_server_arn: str | None = None
+) -> list[dict]:
     """Test MCP Server invocation permissions."""
     print("\n[MCP Server Tests]")
     results = []
@@ -117,14 +124,15 @@ def test_mcp_server(session: boto3.Session, region: str, mcp_server_arn: str | N
             pass
 
     if not mcp_server_arn:
-        results.append(test_result("InvokeAgentRuntime (MCP)", False, "MCP Server ARN not found"))
+        msg = "MCP Server ARN not found"
+        results.append(test_result("InvokeAgentRuntime (MCP)", False, msg))
         return results
 
     client = session.client("bedrock-agentcore", region_name=region)
 
     try:
         # Try to invoke the MCP server with a simple request
-        response = client.invoke_agent_runtime(
+        client.invoke_agent_runtime(
             agentRuntimeArn=mcp_server_arn,
             qualifier="default",
             contentType="application/json",
@@ -134,18 +142,22 @@ def test_mcp_server(session: boto3.Session, region: str, mcp_server_arn: str | N
                 "method": "tools/list",
             }).encode(),
         )
-        results.append(test_result("InvokeAgentRuntime (MCP)", True, "Successfully invoked MCP server"))
+        msg = "Successfully invoked MCP server"
+        results.append(test_result("InvokeAgentRuntime (MCP)", True, msg))
     except ClientError as e:
         code = e.response["Error"]["Code"]
         if code == "AccessDeniedException":
             results.append(test_result("InvokeAgentRuntime (MCP)", False, str(e)))
         else:
-            results.append(test_result("InvokeAgentRuntime (MCP)", True, f"Got {code} (not access denied)"))
+            msg = f"Got {code} (not access denied)"
+            results.append(test_result("InvokeAgentRuntime (MCP)", True, msg))
 
     return results
 
 
-def test_memory(session: boto3.Session, region: str, memory_id: str | None = None) -> list[dict]:
+def test_memory(
+    session: boto3.Session, region: str, memory_id: str | None = None
+) -> list[dict]:
     """Test Memory access permissions."""
     print("\n[Memory Tests]")
     results = []
@@ -166,25 +178,26 @@ def test_memory(session: boto3.Session, region: str, memory_id: str | None = Non
             pass
 
     if not memory_id:
-        results.append(test_result("ListSessions (Memory)", False, "Memory ID not found"))
+        results.append(test_result("ListSessions (Memory)", False, "Memory ID missing"))
         return results
 
     client = session.client("bedrock-agentcore", region_name=region)
 
     # Test ListSessions
     try:
-        response = client.list_sessions(memoryId=memory_id, maxResults=1)
+        client.list_sessions(memoryId=memory_id, maxResults=1)
         results.append(test_result("ListSessions (Memory)", True))
     except ClientError as e:
         code = e.response["Error"]["Code"]
         if code == "AccessDeniedException":
             results.append(test_result("ListSessions (Memory)", False, str(e)))
         else:
-            results.append(test_result("ListSessions (Memory)", True, f"Got {code} (not access denied)"))
+            msg = f"Got {code} (not access denied)"
+            results.append(test_result("ListSessions (Memory)", True, msg))
 
     # Test CreateEvent (write)
     try:
-        response = client.create_event(
+        client.create_event(
             memoryId=memory_id,
             actorId="test-actor",
             sessionId="test-session-123456789012345678901234567890",
@@ -197,7 +210,8 @@ def test_memory(session: boto3.Session, region: str, memory_id: str | None = Non
         if code == "AccessDeniedException":
             results.append(test_result("CreateEvent (Memory)", False, str(e)))
         else:
-            results.append(test_result("CreateEvent (Memory)", True, f"Got {code} (not access denied)"))
+            msg = f"Got {code} (not access denied)"
+            results.append(test_result("CreateEvent (Memory)", True, msg))
 
     return results
 
@@ -207,10 +221,11 @@ def test_bedrock(session: boto3.Session, region: str) -> list[dict]:
     print("\n[Bedrock Model Tests]")
     results = []
 
-    client = session.client("bedrock-runtime", region_name="us-west-2")  # Models in us-west-2
+    # Models are in us-west-2
+    client = session.client("bedrock-runtime", region_name="us-west-2")
 
     try:
-        response = client.invoke_model(
+        client.invoke_model(
             modelId="us.anthropic.claude-3-5-haiku-20241022-v1:0",
             contentType="application/json",
             accept="application/json",
@@ -226,7 +241,8 @@ def test_bedrock(session: boto3.Session, region: str) -> list[dict]:
         if code == "AccessDeniedException":
             results.append(test_result("InvokeModel (Bedrock)", False, str(e)))
         else:
-            results.append(test_result("InvokeModel (Bedrock)", True, f"Got {code} (not access denied)"))
+            msg = f"Got {code} (not access denied)"
+            results.append(test_result("InvokeModel (Bedrock)", True, msg))
 
     return results
 
@@ -239,14 +255,15 @@ def test_ecr(session: boto3.Session, region: str) -> list[dict]:
     client = session.client("ecr", region_name=region)
 
     try:
-        response = client.get_authorization_token()
+        client.get_authorization_token()
         results.append(test_result("GetAuthorizationToken (ECR)", True))
     except ClientError as e:
         code = e.response["Error"]["Code"]
         if code == "AccessDeniedException":
             results.append(test_result("GetAuthorizationToken (ECR)", False, str(e)))
         else:
-            results.append(test_result("GetAuthorizationToken (ECR)", True, f"Got {code} (not access denied)"))
+            msg = f"Got {code} (not access denied)"
+            results.append(test_result("GetAuthorizationToken (ECR)", True, msg))
 
     return results
 
@@ -259,14 +276,15 @@ def test_cloudwatch(session: boto3.Session, region: str) -> list[dict]:
     client = session.client("logs", region_name=region)
 
     try:
-        response = client.describe_log_groups(limit=1)
+        client.describe_log_groups(limit=1)
         results.append(test_result("DescribeLogGroups (CloudWatch)", True))
     except ClientError as e:
         code = e.response["Error"]["Code"]
         if code == "AccessDeniedException":
             results.append(test_result("DescribeLogGroups (CloudWatch)", False, str(e)))
         else:
-            results.append(test_result("DescribeLogGroups (CloudWatch)", True, f"Got {code} (not access denied)"))
+            msg = f"Got {code} (not access denied)"
+            results.append(test_result("DescribeLogGroups (CloudWatch)", True, msg))
 
     return results
 
@@ -286,7 +304,7 @@ def main():
     parser.add_argument("--role", "-r", help="IAM role name to test")
     parser.add_argument("--test", "-t", help="Specific test to run (default: all)")
     parser.add_argument("--region", default="us-east-1", help="AWS region")
-    parser.add_argument("--list", "-l", action="store_true", help="List available tests")
+    parser.add_argument("--list", "-l", action="store_true", help="List tests")
     parser.add_argument("--mcp-server-arn", help="MCP Server ARN (optional)")
     parser.add_argument("--memory-id", help="Memory ID (optional)")
 

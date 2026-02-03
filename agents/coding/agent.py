@@ -113,8 +113,8 @@ def create_coding_agent(
     # Build system prompt with skills
     base_prompt = (
         "You are a Coding Agent specialized in writing and executing code. "
-        "You can run Python, JavaScript, and TypeScript code using the code_interpreter tool. "
-        "When using code_interpreter, pass the input as a dictionary with an 'action' field. "
+        "You can run Python, JavaScript, and TypeScript using code_interpreter. "
+        "Pass input as a dict with an 'action' field. "
         "Write clean, well-documented code and explain your approach."
     )
     skills_addition = get_skills_system_prompt_addition()

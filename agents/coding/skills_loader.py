@@ -5,7 +5,6 @@ Skills are SKILL.md files with YAML frontmatter that provide specialized
 instructions and capabilities to agents.
 """
 
-import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -239,10 +238,10 @@ def get_skills_system_prompt_addition() -> str:
     xml = generate_skills_xml(skills)
     return f"""
 
-You have access to specialized skills that provide detailed instructions for specific tasks.
-Use the list_skills tool to see available skills, and load_skill to get instructions when needed.
+You have access to specialized skills with detailed instructions for specific tasks.
+Use list_skills to see available skills, and load_skill to get instructions.
 
 {xml}
 
-When a task matches a skill's description, load that skill first to get specialized guidance.
+When a task matches a skill's description, load that skill first for guidance.
 """

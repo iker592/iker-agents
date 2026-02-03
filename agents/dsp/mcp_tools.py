@@ -1,50 +1,8 @@
-"""MCP Tools - Wrappers that call the MCP server Lambda for business data."""
+"""MCP Tools - Wrappers that call the AgentCore MCP Server for business data."""
 
-import json
-import os
-from typing import Any
-
-import boto3
 from strands import tool
 
-# MCP Lambda function name - set by environment or default
-MCP_LAMBDA_NAME = os.environ.get("MCP_LAMBDA_NAME", "agentcore-mcp-mcp-server")
-
-
-def _invoke_mcp_tool(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-    """Invoke an MCP tool via Lambda and return the result."""
-    lambda_client = boto3.client("lambda", region_name="us-east-1")
-
-    payload = {
-        "body": json.dumps(
-            {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "tools/call",
-                "params": {"name": tool_name, "arguments": arguments},
-            }
-        )
-    }
-
-    response = lambda_client.invoke(
-        FunctionName=MCP_LAMBDA_NAME,
-        InvocationType="RequestResponse",
-        Payload=json.dumps(payload),
-    )
-
-    response_payload = json.loads(response["Payload"].read())
-    body = json.loads(response_payload.get("body", "{}"))
-
-    if "error" in body:
-        raise Exception(f"MCP error: {body['error']}")
-
-    result = body.get("result", {})
-    content = result.get("content", [])
-
-    if content and content[0].get("type") == "text":
-        return json.loads(content[0]["text"])
-
-    return result
+from .mcp_client import call_mcp_tool
 
 
 @tool
@@ -60,7 +18,7 @@ def get_customer(customer_id: str) -> dict:
     Returns:
         Customer details including id, name, email, tier, and balance
     """
-    return _invoke_mcp_tool("get_customer", {"customer_id": customer_id})
+    return call_mcp_tool("get_customer", {"customer_id": customer_id})
 
 
 @tool
@@ -78,7 +36,7 @@ def list_customers(tier: str = None) -> dict:
     args = {}
     if tier:
         args["tier"] = tier
-    return _invoke_mcp_tool("list_customers", args)
+    return call_mcp_tool("list_customers", args)
 
 
 @tool
@@ -93,7 +51,7 @@ def search_customers(query: str) -> dict:
     Returns:
         List of matching customers and total count
     """
-    return _invoke_mcp_tool("search_customers", {"query": query})
+    return call_mcp_tool("search_customers", {"query": query})
 
 
 @tool
@@ -109,7 +67,7 @@ def get_order(order_id: str) -> dict:
     Returns:
         Order details including id, customer_id, items, status, created_at, and total
     """
-    return _invoke_mcp_tool("get_order", {"order_id": order_id})
+    return call_mcp_tool("get_order", {"order_id": order_id})
 
 
 @tool
@@ -130,7 +88,7 @@ def list_orders(customer_id: str = None, status: str = None) -> dict:
         args["customer_id"] = customer_id
     if status:
         args["status"] = status
-    return _invoke_mcp_tool("list_orders", args)
+    return call_mcp_tool("list_orders", args)
 
 
 @tool
@@ -147,9 +105,7 @@ def create_order(customer_id: str, items: str) -> dict:
     Returns:
         Created order details including id, items, total, and confirmation message
     """
-    return _invoke_mcp_tool(
-        "create_order", {"customer_id": customer_id, "items": items}
-    )
+    return call_mcp_tool("create_order", {"customer_id": customer_id, "items": items})
 
 
 @tool
@@ -162,7 +118,7 @@ def get_analytics() -> dict:
     Returns:
         Business metrics with generated timestamp
     """
-    return _invoke_mcp_tool("get_analytics", {})
+    return call_mcp_tool("get_analytics", {})
 
 
 @tool
@@ -177,7 +133,7 @@ def get_revenue_forecast(months: int = 3) -> dict:
     Returns:
         Base revenue, growth rate, and monthly projections
     """
-    return _invoke_mcp_tool("get_revenue_forecast", {"months": months})
+    return call_mcp_tool("get_revenue_forecast", {"months": months})
 
 
 # Export all tools for easy import

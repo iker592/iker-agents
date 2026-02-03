@@ -176,3 +176,60 @@ resource "aws_iam_role_policy" "lambda_invoke" {
   role   = aws_iam_role.runtime.id
   policy = data.aws_iam_policy_document.lambda_invoke.json
 }
+
+# Policy for MCP Server invocation (AgentCore Runtime)
+resource "aws_iam_role_policy" "invoke_mcp_server" {
+  count  = var.enable_mcp_server ? 1 : 0
+  name   = "invoke-mcp-server"
+  role   = aws_iam_role.runtime.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "InvokeMCPServer"
+        Effect = "Allow"
+        Action = [
+          "bedrock-agentcore:InvokeAgentRuntime",
+          "bedrock-agentcore:InvokeAgent",
+          "bedrock-agentcore:Invoke*"
+        ]
+        Resource = [
+          var.mcp_server_arn,
+          "${var.mcp_server_arn}/*"
+        ]
+      }
+    ]
+  })
+}
+
+# Policy for Code Interpreter invocation
+resource "aws_iam_role_policy" "code_interpreter" {
+  count  = var.enable_code_interpreter ? 1 : 0
+  name   = "code-interpreter"
+  role   = aws_iam_role.runtime.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "InvokeCodeInterpreter"
+        Effect = "Allow"
+        Action = [
+          "bedrock-agentcore:InvokeCodeInterpreter",
+          "bedrock-agentcore:StartCodeInterpreterSession",
+          "bedrock-agentcore:StopCodeInterpreterSession",
+          "bedrock-agentcore:GetCodeInterpreterSession",
+          "bedrock-agentcore:ExecuteCode"
+        ]
+        Resource = [
+          # AWS managed Code Interpreter
+          "arn:aws:bedrock-agentcore:${local.region}:aws:code-interpreter/*",
+          # Custom Code Interpreter (if created)
+          var.code_interpreter_arn,
+          "${var.code_interpreter_arn}/*"
+        ]
+      }
+    ]
+  })
+}

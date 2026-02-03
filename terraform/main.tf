@@ -114,8 +114,6 @@ module "dsp_agent" {
 
   extra_environment_variables = {
     AGENT_NAME = "DSP Agent (Terraform)"
-    # MCP Lambda name for direct invocation (no circular dependency)
-    MCP_LAMBDA_NAME = "agentcore-mcp-mcp-server"
   }
 
   endpoints = ["dev", "canary", "prod"]
@@ -125,11 +123,106 @@ module "dsp_agent" {
   cognito_user_pool_id = var.deploy_ui ? aws_cognito_user_pool.main[0].id : ""
   cognito_client_ids   = var.deploy_ui ? [aws_cognito_user_pool_client.main[0].id] : []
 
+  # MCP Server integration - agent invokes MCP server via AgentCore protocol
+  enable_mcp_server = var.deploy_mcp_server
+  mcp_server_arn    = var.deploy_mcp_server ? module.mcp_server[0].runtime_arn : ""
+
   tags = merge(var.tags, {
     Agent = "dsp-agent-tf"
   })
 
-  depends_on = [aws_ecr_repository.agent]
+  depends_on = [
+    aws_ecr_repository.agent,
+    module.mcp_server
+  ]
+}
+
+# Research Agent module instance
+module "research_agent" {
+  count  = var.deploy_research_agent ? 1 : 0
+  source = "./modules/agent"
+
+  agent_name    = "research-agent-tf"
+  memory_name   = "research_agent_tf_memory"
+  runtime_name  = "research_agent_tf"
+  ecr_image_uri = "${aws_ecr_repository.research_agent.repository_url}:${var.research_agent_image_tag}"
+  model         = "bedrock:global.anthropic.claude-sonnet-4-5-20250929-v1:0"
+
+  extra_environment_variables = {
+    AGENT_NAME = "Research Agent (Terraform)"
+  }
+
+  endpoints = ["dev", "canary", "prod"]
+
+  # JWT auth for direct browser-to-AgentCore streaming
+  cognito_user_pool_id = var.deploy_ui ? aws_cognito_user_pool.main[0].id : ""
+  cognito_client_ids   = var.deploy_ui ? [aws_cognito_user_pool_client.main[0].id] : []
+
+  # No MCP server for Research agent (pure research focused)
+  enable_mcp_server = false
+  mcp_server_arn    = ""
+
+  tags = merge(var.tags, {
+    Agent = "research-agent-tf"
+  })
+
+  depends_on = [
+    aws_ecr_repository.research_agent
+  ]
+}
+
+# Code Interpreter for Coding Agent (managed sandbox for code execution)
+module "code_interpreter" {
+  count  = var.deploy_coding_agent ? 1 : 0
+  source = "./modules/code-interpreter"
+
+  name         = "coding_agent_interpreter"
+  description  = "Code Interpreter for Coding Agent - secure Python/JS execution"
+  network_mode = "PUBLIC"  # Allow internet access for pip installs, etc.
+
+  tags = merge(var.tags, {
+    Component = "code-interpreter"
+  })
+}
+
+# Coding Agent module instance
+module "coding_agent" {
+  count  = var.deploy_coding_agent ? 1 : 0
+  source = "./modules/agent"
+
+  agent_name    = "coding-agent-tf"
+  memory_name   = "coding_agent_tf_memory"
+  runtime_name  = "coding_agent_tf"
+  ecr_image_uri = "${aws_ecr_repository.coding_agent.repository_url}:${var.coding_agent_image_tag}"
+  model         = "bedrock:global.anthropic.claude-sonnet-4-5-20250929-v1:0"
+
+  extra_environment_variables = {
+    AGENT_NAME          = "Coding Agent (Terraform)"
+    CODE_INTERPRETER_ID = module.code_interpreter[0].code_interpreter_id  # AWS managed code execution
+  }
+
+  endpoints = ["dev", "canary", "prod"]
+
+  # JWT auth for direct browser-to-AgentCore streaming
+  cognito_user_pool_id = var.deploy_ui ? aws_cognito_user_pool.main[0].id : ""
+  cognito_client_ids   = var.deploy_ui ? [aws_cognito_user_pool_client.main[0].id] : []
+
+  # No MCP server for Coding agent
+  enable_mcp_server = false
+  mcp_server_arn    = ""
+
+  # Code Interpreter for secure code execution
+  enable_code_interpreter = true
+  code_interpreter_arn    = module.code_interpreter[0].code_interpreter_arn
+
+  tags = merge(var.tags, {
+    Agent = "coding-agent-tf"
+  })
+
+  depends_on = [
+    aws_ecr_repository.coding_agent,
+    module.code_interpreter
+  ]
 }
 
 # X-Ray resource policies for Transaction Search
@@ -193,9 +286,17 @@ module "ui" {
 
   name = "agent-ui-tf"
 
-  runtime_arns = {
-    "DSP Agent" = module.dsp_agent.runtime_arn
-  }
+  runtime_arns = merge(
+    {
+      "DSP Agent" = module.dsp_agent.runtime_arn
+    },
+    var.deploy_research_agent ? {
+      "Research Agent" = module.research_agent[0].runtime_arn
+    } : {},
+    var.deploy_coding_agent ? {
+      "Coding Agent" = module.coding_agent[0].runtime_arn
+    } : {}
+  )
 
   ui_dist_path = "${path.root}/../ui/dist"
 
@@ -208,7 +309,7 @@ module "ui" {
     Component = "ui"
   })
 
-  depends_on = [module.dsp_agent]
+  depends_on = [module.dsp_agent, module.research_agent, module.coding_agent]
 }
 
 # Update Cognito client callback URLs after CloudFront is created
@@ -255,9 +356,20 @@ module "gateway" {
 }
 
 # MCP Server Module - AgentCore Runtime for MCP Protocol
-# Disabled - using Lambda MCP server instead (simpler, already deployed)
-# module "mcp_server" {
-#   count  = var.deploy_mcp_server ? 1 : 0
-#   source = "./modules/mcp-server"
-#   ...
-# }
+# Note: No JWT auth - MCP server uses IAM auth (SigV4) for agent-to-agent invocation
+module "mcp_server" {
+  count  = var.deploy_mcp_server ? 1 : 0
+  source = "./modules/mcp-server"
+
+  name          = "agentcore_mcp"
+  runtime_name  = "mcp_server_tf"
+  endpoint_name = "default"
+  ecr_image_uri = "${aws_ecr_repository.mcp_server.repository_url}:${var.mcp_server_image_tag}"
+  instructions  = "Business tools MCP server with customer, order, and analytics data"
+
+  tags = merge(var.tags, {
+    Component = "mcp-server"
+  })
+
+  depends_on = [aws_ecr_repository.mcp_server]
+}

@@ -40,20 +40,19 @@ output "ecr_repository_url" {
 
 # ECR Repository for MCP Server
 resource "aws_ecr_repository" "mcp_server" {
-  count                = var.deploy_mcp_server ? 1 : 0
   name                 = "iker-agents/mcp-server"
   image_tag_mutability = "MUTABLE"
+  force_delete         = true
 
   image_scanning_configuration {
-    scan_on_push = true
+    scan_on_push = false
   }
 
   tags = var.tags
 }
 
 resource "aws_ecr_lifecycle_policy" "mcp_server" {
-  count      = var.deploy_mcp_server ? 1 : 0
-  repository = aws_ecr_repository.mcp_server[0].name
+  repository = aws_ecr_repository.mcp_server.name
 
   policy = jsonencode({
     rules = [
@@ -75,5 +74,73 @@ resource "aws_ecr_lifecycle_policy" "mcp_server" {
 
 output "mcp_server_ecr_repository_url" {
   description = "ECR repository URL for MCP server"
-  value       = var.deploy_mcp_server ? aws_ecr_repository.mcp_server[0].repository_url : null
+  value       = aws_ecr_repository.mcp_server.repository_url
+}
+
+# ECR Repository for Research Agent
+resource "aws_ecr_repository" "research_agent" {
+  name                 = "iker-agents/research-agent"
+  image_tag_mutability = "MUTABLE"
+  force_delete         = true
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  tags = var.tags
+}
+
+resource "aws_ecr_lifecycle_policy" "research_agent" {
+  repository = aws_ecr_repository.research_agent.name
+
+  policy = jsonencode({
+    rules = [
+      {
+        rulePriority = 1
+        description  = "Keep last 10 images"
+        selection = {
+          tagStatus   = "any"
+          countType   = "imageCountMoreThan"
+          countNumber = 10
+        }
+        action = {
+          type = "expire"
+        }
+      }
+    ]
+  })
+}
+
+# ECR Repository for Coding Agent
+resource "aws_ecr_repository" "coding_agent" {
+  name                 = "iker-agents/coding-agent"
+  image_tag_mutability = "MUTABLE"
+  force_delete         = true
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  tags = var.tags
+}
+
+resource "aws_ecr_lifecycle_policy" "coding_agent" {
+  repository = aws_ecr_repository.coding_agent.name
+
+  policy = jsonencode({
+    rules = [
+      {
+        rulePriority = 1
+        description  = "Keep last 10 images"
+        selection = {
+          tagStatus   = "any"
+          countType   = "imageCountMoreThan"
+          countNumber = 10
+        }
+        action = {
+          type = "expire"
+        }
+      }
+    ]
+  })
 }

@@ -34,6 +34,38 @@ output "dsp_agent_endpoint_arns" {
   value       = module.dsp_agent.endpoint_arns
 }
 
+# Research Agent outputs
+output "research_agent_runtime_arn" {
+  description = "The Research agent runtime ARN"
+  value       = var.deploy_research_agent ? module.research_agent[0].runtime_arn : null
+}
+
+output "research_agent_runtime_id" {
+  description = "The Research agent runtime ID"
+  value       = var.deploy_research_agent ? module.research_agent[0].runtime_id : null
+}
+
+output "research_agent_memory_id" {
+  description = "The Research agent memory ID"
+  value       = var.deploy_research_agent ? module.research_agent[0].memory_id : null
+}
+
+# Coding Agent outputs
+output "coding_agent_runtime_arn" {
+  description = "The Coding agent runtime ARN"
+  value       = var.deploy_coding_agent ? module.coding_agent[0].runtime_arn : null
+}
+
+output "coding_agent_runtime_id" {
+  description = "The Coding agent runtime ID"
+  value       = var.deploy_coding_agent ? module.coding_agent[0].runtime_id : null
+}
+
+output "coding_agent_memory_id" {
+  description = "The Coding agent memory ID"
+  value       = var.deploy_coding_agent ? module.coding_agent[0].memory_id : null
+}
+
 # UI outputs
 output "ui_url" {
   description = "UI CloudFront URL"
@@ -93,7 +125,34 @@ output "mcp_lambda_arn" {
   value       = var.deploy_gateway ? module.gateway[0].mcp_lambda_arn : null
 }
 
-# MCP Server Runtime outputs (disabled - using Lambda instead)
-# output "mcp_server_runtime_id" { ... }
-# output "mcp_server_runtime_arn" { ... }
-# output "mcp_server_url" { ... }
+# MCP Server Runtime outputs
+output "mcp_server_runtime_id" {
+  description = "MCP server runtime ID"
+  value       = var.deploy_mcp_server ? module.mcp_server[0].runtime_id : null
+}
+
+output "mcp_server_runtime_arn" {
+  description = "MCP server runtime ARN"
+  value       = var.deploy_mcp_server ? module.mcp_server[0].runtime_arn : null
+}
+
+output "mcp_server_endpoint_arn" {
+  description = "MCP server endpoint ARN"
+  value       = var.deploy_mcp_server ? module.mcp_server[0].endpoint_arn : null
+}
+
+output "mcp_server_url" {
+  description = "MCP server URL for client connections"
+  value       = var.deploy_mcp_server ? module.mcp_server[0].mcp_url : null
+}
+
+# Code Interpreter outputs
+output "code_interpreter_id" {
+  description = "Code Interpreter ID for Coding Agent"
+  value       = var.deploy_coding_agent ? module.code_interpreter[0].code_interpreter_id : null
+}
+
+output "code_interpreter_arn" {
+  description = "Code Interpreter ARN"
+  value       = var.deploy_coding_agent ? module.code_interpreter[0].code_interpreter_arn : null
+}

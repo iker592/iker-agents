@@ -89,14 +89,21 @@ export function isDirectAgentCoreConfigured(): boolean {
 /**
  * Invoke agent directly via AgentCore with AG-UI streaming
  * Bypasses API Gateway 30s timeout - supports responses up to 5 minutes
+ *
+ * @param input - The user's message
+ * @param sessionId - Session ID for conversation continuity
+ * @param callbacks - Streaming callbacks for AG-UI events
+ * @param runtimeArn - Optional runtime ARN (defaults to VITE_RUNTIME_ARN)
  */
 export async function invokeAgentDirect(
   input: string,
   sessionId: string,
-  callbacks: StreamCallbacks
+  callbacks: StreamCallbacks,
+  runtimeArn?: string
 ): Promise<void> {
-  if (!RUNTIME_ARN) {
-    throw new Error('VITE_RUNTIME_ARN not configured');
+  const arn = runtimeArn || RUNTIME_ARN;
+  if (!arn) {
+    throw new Error('Runtime ARN not provided and VITE_RUNTIME_ARN not configured');
   }
 
   const token = await getAccessToken();
@@ -104,7 +111,7 @@ export async function invokeAgentDirect(
     throw new Error('Not authenticated');
   }
 
-  const escapedArn = encodeURIComponent(RUNTIME_ARN);
+  const escapedArn = encodeURIComponent(arn);
 
   const response = await fetch(
     `${AGENTCORE_ENDPOINT}/runtimes/${escapedArn}/invocations?qualifier=DEFAULT`,

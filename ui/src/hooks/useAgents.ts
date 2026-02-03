@@ -36,6 +36,7 @@ export function useAgents() {
           },
           createdAt: new Date(),
           lastActiveAt: new Date(),
+          runtime_arn: apiAgent.runtime_arn,  // Preserve for direct AgentCore invocation
         }));
 
         setAgents(mappedAgents);

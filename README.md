@@ -413,6 +413,35 @@ make invoke INPUT="Hi"  # Invoke deployed agent
 make invoke-stream      # Stream response
 ```
 
+## Testing IAM Permissions
+
+Before deploying or when debugging permission issues, you can test IAM permissions locally by assuming the agent roles:
+
+```bash
+# Test all agents' permissions at once
+./scripts/test_all_permissions.sh
+
+# Test Code Interpreter permissions (Coding Agent)
+./scripts/test_code_interpreter.sh coding-agent-tf-runtime-role
+
+# Test MCP Server invocation (DSP Agent)
+./scripts/test_mcp_server.sh dsp-agent-tf-runtime-role
+
+# Full Python test suite with options
+uv run scripts/test_permissions.py --role coding-agent-tf-runtime-role --test code-interpreter
+uv run scripts/test_permissions.py --role dsp-agent-tf-runtime-role --test mcp-server
+uv run scripts/test_permissions.py --role dsp-agent-tf-runtime-role  # Run all tests
+uv run scripts/test_permissions.py --list  # Show available tests
+```
+
+**Available tests:**
+- `code-interpreter` - StartCodeInterpreterSession, ExecuteCode, StopCodeInterpreterSession
+- `mcp-server` - InvokeAgentRuntime for MCP Server
+- `memory` - ListSessions, CreateEvent for AgentCore Memory
+- `bedrock` - InvokeModel for Claude models
+- `ecr` - GetAuthorizationToken for image pulls
+- `cloudwatch` - DescribeLogGroups for logging
+
 ## Environment Variables
 
 ### Agent Environment Variables

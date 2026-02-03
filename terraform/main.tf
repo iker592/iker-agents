@@ -137,6 +137,74 @@ module "dsp_agent" {
   ]
 }
 
+# Research Agent module instance
+module "research_agent" {
+  count  = var.deploy_research_agent ? 1 : 0
+  source = "./modules/agent"
+
+  agent_name    = "research-agent-tf"
+  memory_name   = "research_agent_tf_memory"
+  runtime_name  = "research_agent_tf"
+  ecr_image_uri = "${aws_ecr_repository.research_agent.repository_url}:${var.research_agent_image_tag}"
+  model         = "bedrock:global.anthropic.claude-sonnet-4-5-20250929-v1:0"
+
+  extra_environment_variables = {
+    AGENT_NAME = "Research Agent (Terraform)"
+  }
+
+  endpoints = ["dev", "canary", "prod"]
+
+  # JWT auth for direct browser-to-AgentCore streaming
+  cognito_user_pool_id = var.deploy_ui ? aws_cognito_user_pool.main[0].id : ""
+  cognito_client_ids   = var.deploy_ui ? [aws_cognito_user_pool_client.main[0].id] : []
+
+  # No MCP server for Research agent (pure research focused)
+  enable_mcp_server = false
+  mcp_server_arn    = ""
+
+  tags = merge(var.tags, {
+    Agent = "research-agent-tf"
+  })
+
+  depends_on = [
+    aws_ecr_repository.research_agent
+  ]
+}
+
+# Coding Agent module instance
+module "coding_agent" {
+  count  = var.deploy_coding_agent ? 1 : 0
+  source = "./modules/agent"
+
+  agent_name    = "coding-agent-tf"
+  memory_name   = "coding_agent_tf_memory"
+  runtime_name  = "coding_agent_tf"
+  ecr_image_uri = "${aws_ecr_repository.coding_agent.repository_url}:${var.coding_agent_image_tag}"
+  model         = "bedrock:global.anthropic.claude-sonnet-4-5-20250929-v1:0"
+
+  extra_environment_variables = {
+    AGENT_NAME = "Coding Agent (Terraform)"
+  }
+
+  endpoints = ["dev", "canary", "prod"]
+
+  # JWT auth for direct browser-to-AgentCore streaming
+  cognito_user_pool_id = var.deploy_ui ? aws_cognito_user_pool.main[0].id : ""
+  cognito_client_ids   = var.deploy_ui ? [aws_cognito_user_pool_client.main[0].id] : []
+
+  # No MCP server for Coding agent
+  enable_mcp_server = false
+  mcp_server_arn    = ""
+
+  tags = merge(var.tags, {
+    Agent = "coding-agent-tf"
+  })
+
+  depends_on = [
+    aws_ecr_repository.coding_agent
+  ]
+}
+
 # X-Ray resource policies for Transaction Search
 # These are global resources - only create if not already present from CDK
 # Set create_xray_policies = true if CDK hasn't created them
@@ -198,9 +266,17 @@ module "ui" {
 
   name = "agent-ui-tf"
 
-  runtime_arns = {
-    "DSP Agent" = module.dsp_agent.runtime_arn
-  }
+  runtime_arns = merge(
+    {
+      "DSP Agent" = module.dsp_agent.runtime_arn
+    },
+    var.deploy_research_agent ? {
+      "Research Agent" = module.research_agent[0].runtime_arn
+    } : {},
+    var.deploy_coding_agent ? {
+      "Coding Agent" = module.coding_agent[0].runtime_arn
+    } : {}
+  )
 
   ui_dist_path = "${path.root}/../ui/dist"
 
@@ -213,7 +289,7 @@ module "ui" {
     Component = "ui"
   })
 
-  depends_on = [module.dsp_agent]
+  depends_on = [module.dsp_agent, module.research_agent, module.coding_agent]
 }
 
 # Update Cognito client callback URLs after CloudFront is created

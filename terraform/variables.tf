@@ -54,3 +54,27 @@ variable "mcp_server_image_tag" {
   type        = string
   default     = "latest"
 }
+
+variable "research_agent_image_tag" {
+  description = "Docker image tag for Research agent"
+  type        = string
+  default     = "latest"
+}
+
+variable "coding_agent_image_tag" {
+  description = "Docker image tag for Coding agent"
+  type        = string
+  default     = "latest"
+}
+
+variable "deploy_research_agent" {
+  description = "Whether to deploy the Research agent"
+  type        = bool
+  default     = true
+}
+
+variable "deploy_coding_agent" {
+  description = "Whether to deploy the Coding agent"
+  type        = bool
+  default     = true
+}

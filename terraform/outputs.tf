@@ -34,6 +34,38 @@ output "dsp_agent_endpoint_arns" {
   value       = module.dsp_agent.endpoint_arns
 }
 
+# Research Agent outputs
+output "research_agent_runtime_arn" {
+  description = "The Research agent runtime ARN"
+  value       = var.deploy_research_agent ? module.research_agent[0].runtime_arn : null
+}
+
+output "research_agent_runtime_id" {
+  description = "The Research agent runtime ID"
+  value       = var.deploy_research_agent ? module.research_agent[0].runtime_id : null
+}
+
+output "research_agent_memory_id" {
+  description = "The Research agent memory ID"
+  value       = var.deploy_research_agent ? module.research_agent[0].memory_id : null
+}
+
+# Coding Agent outputs
+output "coding_agent_runtime_arn" {
+  description = "The Coding agent runtime ARN"
+  value       = var.deploy_coding_agent ? module.coding_agent[0].runtime_arn : null
+}
+
+output "coding_agent_runtime_id" {
+  description = "The Coding agent runtime ID"
+  value       = var.deploy_coding_agent ? module.coding_agent[0].runtime_id : null
+}
+
+output "coding_agent_memory_id" {
+  description = "The Coding agent memory ID"
+  value       = var.deploy_coding_agent ? module.coding_agent[0].memory_id : null
+}
+
 # UI outputs
 output "ui_url" {
   description = "UI CloudFront URL"

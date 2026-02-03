@@ -64,6 +64,7 @@ export interface Agent {
   metrics: AgentMetrics
   createdAt: Date
   lastActiveAt: Date
+  runtime_arn?: string  // AgentCore runtime ARN for direct invocation
 }
 
 export interface ThoughtLogEntry {

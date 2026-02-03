@@ -44,13 +44,29 @@ jobs:
       - name: Unit Tests
         run: make test-unit
 
-  build-and-push:
-    name: Build & Push Docker Image
+  ensure-ecr-repos:
+    name: Ensure ECR Repos Exist
     runs-on: ubuntu-latest
-    needs: lint-and-test
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::239388734812:role/GitHubActions-iker-agents
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Create ECR repos if not exist
+        run: |
+          for repo in dsp-agent research-agent coding-agent mcp-server; do
+            aws ecr describe-repositories --repository-names "iker-agents/${repo}" 2>/dev/null || \
+              aws ecr create-repository --repository-name "iker-agents/${repo}" --image-tag-mutability MUTABLE
+          done
+
+  build-and-push:
+    name: Build DSP Agent Image
+    runs-on: ubuntu-latest
+    needs: [lint-and-test, ensure-ecr-repos]
     outputs:
-      image_tag: ${{ steps.meta.outputs.tags }}
-      image_digest: ${{ steps.build.outputs.digest }}
+      image_tag: ${{ steps.meta.outputs.short_sha }}
     steps:
       - uses: actions/checkout@v4
 
@@ -73,13 +89,11 @@ jobs:
       - name: Generate image metadata
         id: meta
         run: |
-          # Use short SHA as tag
           SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
           echo "tags=${{ steps.login-ecr.outputs.registry }}/iker-agents/dsp-agent:${SHORT_SHA}" >> $GITHUB_OUTPUT
           echo "short_sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
 
       - name: Build and push Docker image
-        id: build
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -89,15 +103,98 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Output image info
+  build-research-agent:
+    name: Build Research Agent Image
+    runs-on: ubuntu-latest
+    needs: [lint-and-test, ensure-ecr-repos]
+    outputs:
+      image_tag: ${{ steps.meta.outputs.short_sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::239388734812:role/GitHubActions-iker-agents
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up QEMU (for arm64)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Generate image metadata
+        id: meta
         run: |
-          echo "Image: ${{ steps.meta.outputs.tags }}"
-          echo "Digest: ${{ steps.build.outputs.digest }}"
+          SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
+          echo "tags=${{ steps.login-ecr.outputs.registry }}/iker-agents/research-agent:${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "short_sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
+
+      - name: Build and push Research Agent image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          build-args: |
+            AGENT_PATH=./agents/research
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  build-coding-agent:
+    name: Build Coding Agent Image
+    runs-on: ubuntu-latest
+    needs: [lint-and-test, ensure-ecr-repos]
+    outputs:
+      image_tag: ${{ steps.meta.outputs.short_sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::239388734812:role/GitHubActions-iker-agents
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up QEMU (for arm64)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Generate image metadata
+        id: meta
+        run: |
+          SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
+          echo "tags=${{ steps.login-ecr.outputs.registry }}/iker-agents/coding-agent:${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "short_sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
+
+      - name: Build and push Coding Agent image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          build-args: |
+            AGENT_PATH=./agents/coding
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   build-mcp-server:
     name: Build MCP Server Image
     runs-on: ubuntu-latest
-    needs: lint-and-test
+    needs: [lint-and-test, ensure-ecr-repos]
     outputs:
       image_tag: ${{ steps.meta.outputs.short_sha }}
     steps:
@@ -173,10 +270,11 @@ jobs:
   terraform-deploy:
     name: Terraform Deploy
     runs-on: ubuntu-latest
-    needs: [build-and-push, build-mcp-server, build-ui]
+    needs: [build-and-push, build-research-agent, build-coding-agent, build-mcp-server, build-ui]
     outputs:
-      runtime_id: ${{ steps.outputs.outputs.runtime_id }}
-      runtime_arn: ${{ steps.outputs.outputs.runtime_arn }}
+      dsp_runtime_id: ${{ steps.outputs.outputs.dsp_runtime_id }}
+      research_runtime_id: ${{ steps.outputs.outputs.research_runtime_id }}
+      coding_runtime_id: ${{ steps.outputs.outputs.coding_runtime_id }}
       ui_url: ${{ steps.outputs.outputs.ui_url }}
       ui_bucket: ${{ steps.outputs.outputs.ui_bucket }}
       cloudfront_id: ${{ steps.outputs.outputs.cloudfront_id }}
@@ -201,14 +299,6 @@ jobs:
           terraform_version: "1.5.7"
           terraform_wrapper: false
 
-      - name: Extract image tag
-        id: image
-        run: |
-          # Extract just the tag from the full image URI
-          FULL_TAG="${{ needs.build-and-push.outputs.image_tag }}"
-          TAG=$(echo "$FULL_TAG" | cut -d: -f2)
-          echo "tag=${TAG}" >> $GITHUB_OUTPUT
-
       - name: Terraform Init
         working-directory: terraform
         run: terraform init
@@ -218,8 +308,10 @@ jobs:
         working-directory: terraform
         run: |
           terraform plan -no-color \
-            -var="image_tag=${{ steps.image.outputs.tag }}" \
-            -var="mcp_server_image_tag=${{ steps.image.outputs.tag }}" \
+            -var="image_tag=${{ needs.build-and-push.outputs.image_tag }}" \
+            -var="research_agent_image_tag=${{ needs.build-research-agent.outputs.image_tag }}" \
+            -var="coding_agent_image_tag=${{ needs.build-coding-agent.outputs.image_tag }}" \
+            -var="mcp_server_image_tag=${{ needs.build-mcp-server.outputs.image_tag }}" \
             -out=tfplan 2>&1 | tee plan_output.txt
 
       - name: Comment Plan on PR
@@ -230,7 +322,11 @@ jobs:
             const plan = fs.readFileSync('terraform/plan_output.txt', 'utf8').substring(0, 60000);
             const body = `## Terraform Plan
 
-            **Image:** \`${{ needs.build-and-push.outputs.image_tag }}\`
+            **Images:**
+            - DSP Agent: \`${{ needs.build-and-push.outputs.image_tag }}\`
+            - Research Agent: \`${{ needs.build-research-agent.outputs.image_tag }}\`
+            - Coding Agent: \`${{ needs.build-coding-agent.outputs.image_tag }}\`
+            - MCP Server: \`${{ needs.build-mcp-server.outputs.image_tag }}\`
 
             <details>
             <summary>Show Plan</summary>
@@ -258,8 +354,9 @@ jobs:
         id: outputs
         working-directory: terraform
         run: |
-          echo "runtime_id=$(terraform output -raw dsp_agent_runtime_id)" >> $GITHUB_OUTPUT
-          echo "runtime_arn=$(terraform output -raw dsp_agent_runtime_arn)" >> $GITHUB_OUTPUT
+          echo "dsp_runtime_id=$(terraform output -raw dsp_agent_runtime_id)" >> $GITHUB_OUTPUT
+          echo "research_runtime_id=$(terraform output -raw research_agent_runtime_id 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
+          echo "coding_runtime_id=$(terraform output -raw coding_agent_runtime_id 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
           echo "ui_url=$(terraform output -raw ui_url)" >> $GITHUB_OUTPUT
           echo "ui_bucket=$(terraform output -raw ui_bucket_name)" >> $GITHUB_OUTPUT
           echo "cloudfront_id=$(terraform output -raw ui_cloudfront_distribution_id)" >> $GITHUB_OUTPUT
@@ -298,19 +395,25 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
-      - name: Get Latest Version
-        id: version
+      - name: Promote DSP Agent to Canary
         run: |
-          VERSION=$(uv run python scripts/get_latest_version.py ${{ needs.terraform-deploy.outputs.runtime_id }})
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Promoting to version: $VERSION"
+          VERSION=$(uv run python scripts/get_latest_version.py ${{ needs.terraform-deploy.outputs.dsp_runtime_id }})
+          echo "DSP Version: $VERSION"
+          uv run python scripts/promote_endpoint.py ${{ needs.terraform-deploy.outputs.dsp_runtime_id }} canary $VERSION
 
-      - name: Promote to Canary
+      - name: Promote Research Agent to Canary
+        if: needs.terraform-deploy.outputs.research_runtime_id != ''
         run: |
-          uv run python scripts/promote_endpoint.py \
-            ${{ needs.terraform-deploy.outputs.runtime_id }} \
-            canary \
-            ${{ steps.version.outputs.version }}
+          VERSION=$(uv run python scripts/get_latest_version.py ${{ needs.terraform-deploy.outputs.research_runtime_id }})
+          echo "Research Version: $VERSION"
+          uv run python scripts/promote_endpoint.py ${{ needs.terraform-deploy.outputs.research_runtime_id }} canary $VERSION
+
+      - name: Promote Coding Agent to Canary
+        if: needs.terraform-deploy.outputs.coding_runtime_id != ''
+        run: |
+          VERSION=$(uv run python scripts/get_latest_version.py ${{ needs.terraform-deploy.outputs.coding_runtime_id }})
+          echo "Coding Version: $VERSION"
+          uv run python scripts/promote_endpoint.py ${{ needs.terraform-deploy.outputs.coding_runtime_id }} canary $VERSION
 
   e2e-tests:
     name: E2E Tests (Canary)
@@ -338,7 +441,7 @@ jobs:
 
       - name: Run E2E Tests
         env:
-          AGENT_RUNTIME_ARN: ${{ needs.terraform-deploy.outputs.runtime_arn }}
+          AGENT_RUNTIME_ARN: arn:aws:bedrock-agentcore:us-east-1:239388734812:runtime/${{ needs.terraform-deploy.outputs.dsp_runtime_id }}
           AGENT_ENDPOINT: canary
         run: make test-e2e
 
@@ -366,18 +469,22 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
-      - name: Get Latest Version
-        id: version
+      - name: Promote DSP Agent to Prod
         run: |
-          VERSION=$(uv run python scripts/get_latest_version.py ${{ needs.terraform-deploy.outputs.runtime_id }})
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          VERSION=$(uv run python scripts/get_latest_version.py ${{ needs.terraform-deploy.outputs.dsp_runtime_id }})
+          uv run python scripts/promote_endpoint.py ${{ needs.terraform-deploy.outputs.dsp_runtime_id }} prod $VERSION
 
-      - name: Promote to Prod
+      - name: Promote Research Agent to Prod
+        if: needs.terraform-deploy.outputs.research_runtime_id != ''
         run: |
-          uv run python scripts/promote_endpoint.py \
-            ${{ needs.terraform-deploy.outputs.runtime_id }} \
-            prod \
-            ${{ steps.version.outputs.version }}
+          VERSION=$(uv run python scripts/get_latest_version.py ${{ needs.terraform-deploy.outputs.research_runtime_id }})
+          uv run python scripts/promote_endpoint.py ${{ needs.terraform-deploy.outputs.research_runtime_id }} prod $VERSION
+
+      - name: Promote Coding Agent to Prod
+        if: needs.terraform-deploy.outputs.coding_runtime_id != ''
+        run: |
+          VERSION=$(uv run python scripts/get_latest_version.py ${{ needs.terraform-deploy.outputs.coding_runtime_id }})
+          uv run python scripts/promote_endpoint.py ${{ needs.terraform-deploy.outputs.coding_runtime_id }} prod $VERSION
 
       - name: Comment UI URL on PR
         uses: actions/github-script@v7
@@ -388,11 +495,11 @@ jobs:
             | Resource | Value |
             |----------|-------|
             | **UI URL** | ${{ needs.terraform-deploy.outputs.ui_url }} |
-            | Runtime ID | \`${{ needs.terraform-deploy.outputs.runtime_id }}\` |
-            | Version | \`${{ steps.version.outputs.version }}\` |
-            | Image | \`${{ github.sha }}\` |
+            | DSP Agent | \`${{ needs.terraform-deploy.outputs.dsp_runtime_id }}\` |
+            | Research Agent | \`${{ needs.terraform-deploy.outputs.research_runtime_id }}\` |
+            | Coding Agent | \`${{ needs.terraform-deploy.outputs.coding_runtime_id }}\` |
 
-            **Endpoints promoted:** dev ✅ → canary ✅ → prod ✅`;
+            **All agents promoted:** dev ✅ → canary ✅ → prod ✅`;
 
             github.rest.issues.createComment({
               issue_number: context.issue.number,
@@ -405,11 +512,16 @@ jobs:
         run: |
           echo "## Deployment Complete" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Agents Deployed" >> $GITHUB_STEP_SUMMARY
+          echo "| Agent | Runtime ID |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|------------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **DSP Agent** | \`${{ needs.terraform-deploy.outputs.dsp_runtime_id }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Research Agent** | \`${{ needs.terraform-deploy.outputs.research_runtime_id }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Coding Agent** | \`${{ needs.terraform-deploy.outputs.coding_runtime_id }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Resources" >> $GITHUB_STEP_SUMMARY
           echo "| Resource | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
           echo "| **UI URL** | ${{ needs.terraform-deploy.outputs.ui_url }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Runtime ID | \`${{ needs.terraform-deploy.outputs.runtime_id }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Version | \`${{ steps.version.outputs.version }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Image | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Endpoints promoted:** dev ✅ → canary ✅ → prod ✅" >> $GITHUB_STEP_SUMMARY
+          echo "**All agents promoted:** dev ✅ → canary ✅ → prod ✅" >> $GITHUB_STEP_SUMMARY

@@ -65,9 +65,14 @@ Each agent consists of:
 ```
 
 **Available Agents:**
-- **DSP Agent** (`agents/dsp/`) - Main business agent with MCP tools
-- **Research Agent** (`agents/research/`) - Research-focused agent
-- **Coding Agent** (`agents/coding/`) - Code assistance agent
+
+| Agent | Location | Tools | System Prompt |
+|-------|----------|-------|---------------|
+| **DSP Agent** | `agents/dsp/` | MCP tools (customers, orders, analytics) | Business analyst with access to customer, order, and analytics data |
+| **Research Agent** | `agents/research/` | `calculator`, `http_request` | Research specialist for gathering information and analyzing data |
+| **Coding Agent** | `agents/coding/` | `calculator`, `python_repl` | Python coding specialist for writing and executing code |
+
+**Note:** The Coding Agent requires `PYTHON_REPL_PERSISTENCE_DIR=/tmp/repl_state` environment variable and the directory must exist in the container (created in Dockerfile).
 
 ### 2. MCP Server (Tool Provider)
 
@@ -169,8 +174,27 @@ The UI uses the **AG-UI protocol** for real-time streaming of agent responses.
 │  │  - Streams agent responses in real-time         │    │
 │  │  - Handles tool calls and results               │    │
 │  │  - Manages conversation state                   │    │
+│  │  - Selects agent runtime dynamically            │    │
 │  └─────────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────┘
+```
+
+**Key UI Components:**
+
+| File | Purpose |
+|------|---------|
+| `ui/src/pages/Chat.tsx` | Main chat interface with agent selector |
+| `ui/src/services/api.ts` | API client with `invokeAgentDirect()` for streaming |
+| `ui/src/hooks/useAgents.ts` | Fetches agents and maps API response to UI types |
+| `ui/src/types/agent.ts` | TypeScript types including `runtime_arn` |
+
+**Agent Selection Flow:**
+```
+1. useAgents() fetches agent list from API (includes runtime_arn)
+2. User selects agent from dropdown
+3. Chat.tsx gets selected agent's runtime_arn
+4. invokeAgentDirect() calls AgentCore with that specific runtime ARN
+5. Each agent responds with its own personality/tools
 ```
 
 ### 5. Memory (Conversation Persistence)
@@ -243,32 +267,52 @@ terraform/
 │                    Push to main                          │
 └─────────────────────────────────────────────────────────┘
                           │
-          ┌───────────────┼───────────────┐
-          ▼               ▼               ▼
-┌─────────────────┐ ┌─────────────┐ ┌─────────────┐
-│ Build Agent     │ │ Build MCP   │ │ Build UI    │
-│ Docker Image    │ │ Server      │ │             │
-└────────┬────────┘ └──────┬──────┘ └──────┬──────┘
-         │                 │               │
-         └─────────────────┼───────────────┘
+                          ▼
+              ┌─────────────────────┐
+              │  Ensure ECR Repos   │
+              └──────────┬──────────┘
+                         │
+    ┌────────────────────┼────────────────────┐
+    │           │        │        │           │
+    ▼           ▼        ▼        ▼           ▼
+┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐
+│  DSP   │ │Research│ │ Coding │ │  MCP   │ │  UI    │
+│ Agent  │ │ Agent  │ │ Agent  │ │ Server │ │ Build  │
+└───┬────┘ └───┬────┘ └───┬────┘ └───┬────┘ └───┬────┘
+    │          │          │          │          │
+    └──────────┴──────────┴──────────┴──────────┘
+                          │
                           ▼
               ┌─────────────────────┐
               │  Terraform Deploy   │
-              │  (dev endpoint)     │
+              │  (all 3 agents)     │
               └──────────┬──────────┘
-                         ▼
-              ┌─────────────────────┐
-              │  Promote to Canary  │
-              └──────────┬──────────┘
-                         ▼
-              ┌─────────────────────┐
-              │  E2E Tests (Canary) │
-              └──────────┬──────────┘
-                         ▼
-              ┌─────────────────────┐
-              │  Promote to Prod    │
-              └─────────────────────┘
+                         │
+         ┌───────────────┴───────────────┐
+         ▼                               ▼
+┌─────────────────┐           ┌─────────────────┐
+│ Promote DSP     │           │ Deploy UI to S3 │
+│ Research, Coding│           │ + CloudFront    │
+│ to Canary       │           │ Invalidation    │
+└────────┬────────┘           └─────────────────┘
+         ▼
+┌─────────────────┐
+│ E2E Tests       │
+│ (Canary)        │
+└────────┬────────┘
+         ▼
+┌─────────────────┐
+│ Promote All     │
+│ to Prod         │
+└─────────────────┘
 ```
+
+**Build Jobs (Parallel):**
+- `build-and-push` - DSP Agent image
+- `build-research-agent` - Research Agent image
+- `build-coding-agent` - Coding Agent image
+- `build-mcp-server` - MCP Server image
+- `build-ui` - React frontend bundle
 
 ### PR Pipeline (pr.yml)
 
@@ -309,15 +353,25 @@ terraform/
 ```dockerfile
 FROM public.ecr.aws/docker/library/python:3.13-slim
 WORKDIR /app
+
+# Build arg for selecting which agent to include
+ARG AGENT_PATH=./agents/dsp
+
 COPY requirements.txt .
 RUN pip install -r requirements.txt
-COPY . .
+COPY ${AGENT_PATH} /app/agent
+
 # AgentCore requires non-root user
-RUN useradd -m -u 1000 bedrock_agentcore
+# Create /tmp/repl_state for python_repl tool (Coding Agent)
+RUN useradd -m -u 1000 bedrock_agentcore && \
+    mkdir -p /tmp/repl_state && \
+    chown bedrock_agentcore:bedrock_agentcore /tmp/repl_state
 USER bedrock_agentcore
+
 EXPOSE 8080  # AgentCore standard port
+
 # OpenTelemetry instrumentation required
-CMD ["opentelemetry-instrument", "python", "main.py"]
+CMD ["opentelemetry-instrument", "python", "-m", "agent.main"]
 ```
 
 ### MCP Server Dockerfile
@@ -399,3 +453,37 @@ make logs     # View logs
 | `terraform/modules/agent/` | Agent runtime module |
 | `terraform/modules/mcp-server/` | MCP server module |
 | `.github/workflows/terraform-merge.yml` | Main CI/CD pipeline |
+
+## Troubleshooting
+
+### Common Issues
+
+**1. Coding Agent fails with "Permission denied: /app/repl_state"**
+- The `python_repl` tool from `strands_tools` needs a writable persistence directory
+- Fix: Set `PYTHON_REPL_PERSISTENCE_DIR=/tmp/repl_state` env var AND create the directory in Dockerfile
+- The directory must exist before the env var is validated
+
+**2. Agent returns 424 "Failed Dependency" error**
+- Check CloudWatch logs: `/aws/bedrock-agentcore/runtimes/<runtime-name>-<id>-DEFAULT`
+- Common causes: import errors, missing dependencies, permission issues
+
+**3. All agents respond as "business analyst"**
+- UI was using hardcoded `VITE_RUNTIME_ARN` for all agents
+- Fix: Pass selected agent's `runtime_arn` to `invokeAgentDirect()`
+
+**4. Tool calls fail silently**
+- Check agent IAM role has `bedrock-agentcore:InvokeAgentRuntime` permission for MCP server ARN
+- Verify MCP server is deployed and healthy
+
+### Viewing Logs
+
+```bash
+# List log groups
+aws logs describe-log-groups --log-group-name-prefix "/aws/bedrock-agentcore"
+
+# Tail recent logs
+aws logs tail "/aws/bedrock-agentcore/runtimes/<runtime-name>-DEFAULT" --since 10m --format short
+
+# Filter for errors
+aws logs tail "/aws/bedrock-agentcore/runtimes/<runtime-name>-DEFAULT" --since 1h --filter-pattern "ERROR"
+```

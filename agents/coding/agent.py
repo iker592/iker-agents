@@ -6,7 +6,8 @@ from bedrock_agentcore.memory.integrations.strands.session_manager import (
     AgentCoreMemorySessionManager,
 )
 from strands.models.bedrock import BedrockModel
-from strands_tools import calculator, python_repl
+from strands_tools import calculator
+from strands_tools.code_interpreter import AgentCoreCodeInterpreter
 from yahoo_dsp_agent_sdk.agent import Agent
 
 
@@ -37,15 +38,19 @@ def create_coding_agent(
         temperature=0.0,
     )
 
+    # Use AWS managed Code Interpreter for secure code execution
+    # No PTY issues, supports Python/JS/TS, up to 8 hours execution time
+    code_interpreter = AgentCoreCodeInterpreter(region=region_name)
+
     agent = Agent(
         model=model,
         system_prompt=(
             "You are a Coding Agent specialized in writing Python code, "
             "debugging, and solving programming problems. You can execute "
-            "Python code to verify your solutions. Write clean, "
-            "well-documented code and explain your approach."
+            "Python code to verify your solutions using the code_interpreter tool. "
+            "Write clean, well-documented code and explain your approach."
         ),
-        tools=[calculator, python_repl],
+        tools=[calculator, code_interpreter.code_interpreter],
         session_manager=session_manager,
         agent_id="coding-agent",
         description="Coding Agent for Python programming and debugging.",

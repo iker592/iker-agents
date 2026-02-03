@@ -171,6 +171,20 @@ module "research_agent" {
   ]
 }
 
+# Code Interpreter for Coding Agent (managed sandbox for code execution)
+module "code_interpreter" {
+  count  = var.deploy_coding_agent ? 1 : 0
+  source = "./modules/code-interpreter"
+
+  name         = "coding-agent-interpreter"
+  description  = "Code Interpreter for Coding Agent - secure Python/JS execution"
+  network_mode = "PUBLIC"  # Allow internet access for pip installs, etc.
+
+  tags = merge(var.tags, {
+    Component = "code-interpreter"
+  })
+}
+
 # Coding Agent module instance
 module "coding_agent" {
   count  = var.deploy_coding_agent ? 1 : 0
@@ -183,10 +197,8 @@ module "coding_agent" {
   model         = "bedrock:global.anthropic.claude-sonnet-4-5-20250929-v1:0"
 
   extra_environment_variables = {
-    AGENT_NAME                   = "Coding Agent (Terraform)"
-    PYTHON_REPL_PERSISTENCE_DIR  = "/tmp/repl_state"  # strands_tools python_repl needs writable dir
-    BYPASS_TOOL_CONSENT          = "true"             # Skip interactive confirmation prompt in serverless
-    PYTHON_REPL_INTERACTIVE      = "false"            # Use standard mode instead of PTY (PTY fails in containers)
+    AGENT_NAME          = "Coding Agent (Terraform)"
+    CODE_INTERPRETER_ID = module.code_interpreter[0].code_interpreter_id  # AWS managed code execution
   }
 
   endpoints = ["dev", "canary", "prod"]
@@ -199,12 +211,17 @@ module "coding_agent" {
   enable_mcp_server = false
   mcp_server_arn    = ""
 
+  # Code Interpreter for secure code execution
+  enable_code_interpreter = true
+  code_interpreter_arn    = module.code_interpreter[0].code_interpreter_arn
+
   tags = merge(var.tags, {
     Agent = "coding-agent-tf"
   })
 
   depends_on = [
-    aws_ecr_repository.coding_agent
+    aws_ecr_repository.coding_agent,
+    module.code_interpreter
   ]
 }
 

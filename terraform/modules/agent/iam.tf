@@ -202,3 +202,30 @@ resource "aws_iam_role_policy" "invoke_mcp_server" {
     ]
   })
 }
+
+# Policy for Code Interpreter invocation
+resource "aws_iam_role_policy" "code_interpreter" {
+  count  = var.enable_code_interpreter ? 1 : 0
+  name   = "code-interpreter"
+  role   = aws_iam_role.runtime.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "InvokeCodeInterpreter"
+        Effect = "Allow"
+        Action = [
+          "bedrock-agentcore:InvokeCodeInterpreter",
+          "bedrock-agentcore:CreateCodeInterpreterSession",
+          "bedrock-agentcore:DeleteCodeInterpreterSession",
+          "bedrock-agentcore:GetCodeInterpreterSession"
+        ]
+        Resource = [
+          var.code_interpreter_arn,
+          "${var.code_interpreter_arn}/*"
+        ]
+      }
+    ]
+  })
+}

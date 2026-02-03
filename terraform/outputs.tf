@@ -145,3 +145,14 @@ output "mcp_server_url" {
   description = "MCP server URL for client connections"
   value       = var.deploy_mcp_server ? module.mcp_server[0].mcp_url : null
 }
+
+# Code Interpreter outputs
+output "code_interpreter_id" {
+  description = "Code Interpreter ID for Coding Agent"
+  value       = var.deploy_coding_agent ? module.code_interpreter[0].code_interpreter_id : null
+}
+
+output "code_interpreter_arn" {
+  description = "Code Interpreter ARN"
+  value       = var.deploy_coding_agent ? module.code_interpreter[0].code_interpreter_arn : null
+}

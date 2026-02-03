@@ -73,3 +73,16 @@ variable "enable_mcp_server" {
   type        = bool
   default     = false
 }
+
+# Code Interpreter integration
+variable "code_interpreter_arn" {
+  description = "ARN of Code Interpreter for secure code execution"
+  type        = string
+  default     = ""
+}
+
+variable "enable_code_interpreter" {
+  description = "Whether to enable Code Interpreter integration"
+  type        = bool
+  default     = false
+}

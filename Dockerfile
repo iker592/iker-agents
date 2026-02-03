@@ -29,7 +29,9 @@ COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/pytho
 COPY --from=builder /usr/local/bin /usr/local/bin
 COPY ${AGENT_PATH} /app/agent
 
-RUN useradd -m -u 1000 bedrock_agentcore
+RUN useradd -m -u 1000 bedrock_agentcore && \
+    mkdir -p /tmp/repl_state && \
+    chown bedrock_agentcore:bedrock_agentcore /tmp/repl_state
 USER bedrock_agentcore
 
 # Expose both protocols: HTTP (8080) and A2A (9000)

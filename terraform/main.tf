@@ -176,7 +176,7 @@ module "code_interpreter" {
   count  = var.deploy_coding_agent ? 1 : 0
   source = "./modules/code-interpreter"
 
-  name         = "coding-agent-interpreter"
+  name         = "coding_agent_interpreter"
   description  = "Code Interpreter for Coding Agent - secure Python/JS execution"
   network_mode = "PUBLIC"  # Allow internet access for pip installs, etc.
 

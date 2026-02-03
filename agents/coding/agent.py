@@ -13,6 +13,13 @@ from strands_tools import calculator
 from strands_tools.code_interpreter import AgentCoreCodeInterpreter
 from yahoo_dsp_agent_sdk.agent import Agent
 
+from .skills_loader import (
+    get_skills_system_prompt_addition,
+    list_skills,
+    load_skill,
+    read_skill_file,
+)
+
 # Global code interpreter instance (initialized per agent)
 _code_interpreter: AgentCoreCodeInterpreter | None = None
 
@@ -103,15 +110,20 @@ def create_coding_agent(
     # Initialize the code interpreter for this region
     _get_code_interpreter(region_name)
 
+    # Build system prompt with skills
+    base_prompt = (
+        "You are a Coding Agent specialized in writing and executing code. "
+        "You can run Python, JavaScript, and TypeScript code using the code_interpreter tool. "
+        "When using code_interpreter, pass the input as a dictionary with an 'action' field. "
+        "Write clean, well-documented code and explain your approach."
+    )
+    skills_addition = get_skills_system_prompt_addition()
+    system_prompt = base_prompt + skills_addition
+
     agent = Agent(
         model=model,
-        system_prompt=(
-            "You are a Coding Agent specialized in writing and executing code. "
-            "You can run Python, JavaScript, and TypeScript code using the code_interpreter tool. "
-            "When using code_interpreter, pass the input as a dictionary with an 'action' field. "
-            "Write clean, well-documented code and explain your approach."
-        ),
-        tools=[calculator, code_interpreter],
+        system_prompt=system_prompt,
+        tools=[calculator, code_interpreter, list_skills, load_skill, read_skill_file],
         session_manager=session_manager,
         agent_id="coding-agent",
         description="Coding Agent for Python, JavaScript, and TypeScript programming.",

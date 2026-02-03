@@ -70,9 +70,34 @@ Each agent consists of:
 |-------|----------|-------|---------------|
 | **DSP Agent** | `agents/dsp/` | MCP tools (customers, orders, analytics) | Business analyst with access to customer, order, and analytics data |
 | **Research Agent** | `agents/research/` | `calculator`, `http_request` | Research specialist for gathering information and analyzing data |
-| **Coding Agent** | `agents/coding/` | `calculator`, `python_repl` | Python coding specialist for writing and executing code |
+| **Coding Agent** | `agents/coding/` | `calculator`, `AgentCoreCodeInterpreter` | Python coding specialist for writing and executing code |
 
-**Note:** The Coding Agent requires `PYTHON_REPL_PERSISTENCE_DIR=/tmp/repl_state` environment variable and the directory must exist in the container (created in Dockerfile).
+### Code Interpreter (Coding Agent)
+
+The Coding Agent uses **AWS AgentCore Code Interpreter** instead of `python_repl` for secure code execution.
+
+**Why AgentCore Code Interpreter?**
+- Fully managed sandbox environment (no PTY/container issues)
+- Supports Python, JavaScript, TypeScript
+- Up to 8 hours execution time (vs container timeouts)
+- File support up to 5GB via S3
+- Secure isolation without infrastructure management
+
+**Terraform Resources:**
+- `aws_bedrockagentcore_code_interpreter` - The code interpreter resource
+- IAM role with permissions for code execution
+- Network mode: PUBLIC (allows pip installs, internet access)
+
+**Usage in Agent:**
+```python
+from strands_tools.code_interpreter import AgentCoreCodeInterpreter
+
+code_interpreter = AgentCoreCodeInterpreter(region="us-east-1")
+agent = Agent(
+    tools=[calculator, code_interpreter.code_interpreter],
+    ...
+)
+```
 
 ### 2. MCP Server (Tool Provider)
 

@@ -230,6 +230,10 @@ export function Chat() {
     try {
       // Use direct AgentCore streaming if configured (bypasses API Gateway 30s timeout)
       if (isDirectAgentCoreConfigured()) {
+        // Get the selected agent's runtime ARN for direct invocation
+        const selectedApiAgent = agents.find(a => a.id === selectedAgentId)
+        const runtimeArn = selectedApiAgent?.runtime_arn
+
         await invokeAgentDirect(content, currentSessionId, {
           // Text streaming - shows LLM tokens as they arrive
           onTextDelta: (delta) => {
@@ -368,7 +372,7 @@ export function Chat() {
             segmentsRef.current = []
             currentToolIdRef.current = ""
           },
-        })
+        }, runtimeArn)
       } else {
         // Fallback to Lambda proxy (limited to 30s timeout)
         const response = await invokeAgent({

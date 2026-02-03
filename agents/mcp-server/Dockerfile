@@ -1,5 +1,8 @@
 FROM python:3.13-slim
 
+# Build version to bust cache
+ARG BUILD_VERSION=2
+
 WORKDIR /app
 
 # Copy and install dependencies

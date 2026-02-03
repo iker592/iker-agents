@@ -183,7 +183,8 @@ module "coding_agent" {
   model         = "bedrock:global.anthropic.claude-sonnet-4-5-20250929-v1:0"
 
   extra_environment_variables = {
-    AGENT_NAME = "Coding Agent (Terraform)"
+    AGENT_NAME                   = "Coding Agent (Terraform)"
+    PYTHON_REPL_PERSISTENCE_DIR  = "/tmp/repl_state"  # strands_tools python_repl needs writable dir
   }
 
   endpoints = ["dev", "canary", "prod"]

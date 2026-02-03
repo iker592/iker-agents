@@ -185,6 +185,7 @@ module "coding_agent" {
   extra_environment_variables = {
     AGENT_NAME                   = "Coding Agent (Terraform)"
     PYTHON_REPL_PERSISTENCE_DIR  = "/tmp/repl_state"  # strands_tools python_repl needs writable dir
+    BYPASS_TOOL_CONSENT          = "true"             # Skip interactive confirmation prompt in serverless
   }
 
   endpoints = ["dev", "canary", "prod"]

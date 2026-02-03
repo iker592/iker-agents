@@ -139,17 +139,22 @@ This session focused on implementing proper MCP Server deployment, enabling all 
 6. `Fix coding agent: disable PTY mode for python_repl`
 7. `Update ARCHITECTURE.md with all agents and troubleshooting`
 8. `Replace python_repl with AWS AgentCore Code Interpreter`
+9. `Remove legacy CDK-based pr.yml workflow`
 
 ## Known Issues
 
-1. **`full-preview` job failing:** The `pr.yml` workflow has an old CDK-based `full-preview` job that expects `ui/dist` but doesn't build it. This is a legacy workflow - we're using Terraform now via `terraform-pr.yml`.
+~~1. **`full-preview` job failing:** The `pr.yml` workflow has an old CDK-based `full-preview` job that expects `ui/dist` but doesn't build it.~~ **RESOLVED:** Removed legacy `pr.yml` workflow.
+
+## Completed Actions
+
+1. ✅ Removed legacy CDK-based `pr.yml` workflow (was causing `full-preview` failures)
+2. ✅ Now using only `terraform-pr.yml` for PR validation
 
 ## Next Steps
 
 1. Merge PR #7 after CI passes
-2. Consider removing the old `pr.yml` CDK workflow or fixing it
-3. Test all 3 agents in production UI
-4. Verify Code Interpreter works correctly for Coding Agent
+2. Test all 3 agents in production UI
+3. Verify Code Interpreter works correctly for Coding Agent
 
 ## Resources
 

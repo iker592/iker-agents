@@ -217,11 +217,15 @@ resource "aws_iam_role_policy" "code_interpreter" {
         Effect = "Allow"
         Action = [
           "bedrock-agentcore:InvokeCodeInterpreter",
-          "bedrock-agentcore:CreateCodeInterpreterSession",
-          "bedrock-agentcore:DeleteCodeInterpreterSession",
-          "bedrock-agentcore:GetCodeInterpreterSession"
+          "bedrock-agentcore:StartCodeInterpreterSession",
+          "bedrock-agentcore:StopCodeInterpreterSession",
+          "bedrock-agentcore:GetCodeInterpreterSession",
+          "bedrock-agentcore:ExecuteCode"
         ]
         Resource = [
+          # AWS managed Code Interpreter
+          "arn:aws:bedrock-agentcore:${local.region}:aws:code-interpreter/*",
+          # Custom Code Interpreter (if created)
           var.code_interpreter_arn,
           "${var.code_interpreter_arn}/*"
         ]

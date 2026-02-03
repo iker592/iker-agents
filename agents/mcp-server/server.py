@@ -3,10 +3,14 @@
 import json
 from datetime import datetime, timedelta
 
+from bedrock_agentcore.runtime import BedrockAgentCoreApp
 from mcp.server.fastmcp import FastMCP
 
-# Initialize FastMCP server - stateless_http required for AgentCore
-mcp = FastMCP(name="agentcore-mcp-business", host="0.0.0.0", stateless_http=True)
+# Initialize FastMCP server
+mcp = FastMCP(name="agentcore-mcp-business")
+
+# Initialize AgentCore app
+app = BedrockAgentCoreApp()
 
 # ============================================================================
 # Mock Data Store - Demo business data
@@ -241,5 +245,85 @@ def get_revenue_forecast(months: int = 3) -> str:
     )
 
 
+# ============================================================================
+# AgentCore Entrypoint - handles MCP JSON-RPC requests
+# ============================================================================
+
+
+@app.entrypoint()
+async def handle_request(payload: dict, context: dict) -> dict:
+    """Handle incoming MCP JSON-RPC requests from AgentCore.
+
+    Args:
+        payload: MCP JSON-RPC request with method and params
+        context: AgentCore context (user_id, session_id, etc.)
+
+    Returns:
+        MCP JSON-RPC response
+    """
+    method = payload.get("method", "")
+    params = payload.get("params", {})
+    request_id = payload.get("id", 1)
+
+    # Handle tools/call method
+    if method == "tools/call":
+        tool_name = params.get("name", "")
+        arguments = params.get("arguments", {})
+
+        # Find and call the tool
+        tool_fn = None
+        for tool in mcp._tool_manager._tools.values():
+            if tool.name == tool_name:
+                tool_fn = tool.fn
+                break
+
+        if tool_fn:
+            try:
+                result = tool_fn(**arguments)
+                return {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "result": {"content": [{"type": "text", "text": result}]},
+                }
+            except Exception as e:
+                return {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "error": {"code": -32000, "message": str(e)},
+                }
+        else:
+            return {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "error": {"code": -32601, "message": f"Tool not found: {tool_name}"},
+            }
+
+    # Handle tools/list method
+    elif method == "tools/list":
+        tools = []
+        for tool in mcp._tool_manager._tools.values():
+            tools.append(
+                {
+                    "name": tool.name,
+                    "description": tool.description or "",
+                    "inputSchema": tool.parameters,
+                }
+            )
+        return {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": {"tools": tools},
+        }
+
+    # Unknown method
+    return {
+        "jsonrpc": "2.0",
+        "id": request_id,
+        "error": {"code": -32601, "message": f"Method not found: {method}"},
+    }
+
+
 if __name__ == "__main__":
-    mcp.run(transport="streamable-http")
+    import uvicorn
+
+    uvicorn.run(app, host="0.0.0.0", port=8000)

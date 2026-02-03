@@ -250,7 +250,7 @@ def get_revenue_forecast(months: int = 3) -> str:
 # ============================================================================
 
 
-@app.entrypoint()
+@app.entrypoint
 async def handle_request(payload: dict, context: dict) -> dict:
     """Handle incoming MCP JSON-RPC requests from AgentCore.
 

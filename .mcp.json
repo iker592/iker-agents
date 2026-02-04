@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "agent-bridge": {
+      "command": "python",
+      "args": ["agents/mcp-agent-bridge/server.py"],
+      "env": {
+        "DSP_AGENT_URL": "http://localhost:8080",
+        "RESEARCH_AGENT_URL": "http://localhost:8081",
+        "CODING_AGENT_URL": "http://localhost:8082"
+      }
+    }
+  }
+}
